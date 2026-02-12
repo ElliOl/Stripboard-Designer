@@ -1,0 +1,28 @@
+---
+description: Icon usage standards - only Lucide React icons, never emoticon/emoji icons
+alwaysApply: true
+---
+
+# Icons: Lucide Only
+
+Use **only** [Lucide React](https://lucide.dev/) icons throughout the app. NEVER use emoticon or emoji icons (e.g. 👁️, 🙈, ✏️, ❌, ➕).
+
+## Rules
+
+- Import icons from `lucide-react`
+- If a suitable Lucide icon doesn't exist, ask the user before using an alternative
+- Unicode symbols like `×` for close buttons are acceptable as they are typographic, not emoji
+- Never use emoji codepoints as icon replacements
+
+## Example
+
+```tsx
+// ❌ BAD
+<button>👁️</button>
+<span>🗑️</span>
+
+// ✅ GOOD
+import { Eye, Trash2 } from 'lucide-react';
+<button><Eye size={14} /></button>
+<button><Trash2 size={14} /></button>
+```

@@ -1,0 +1,230 @@
+[
+  {
+    "id": "dip-8",
+    "name": "DIP-8 IC",
+    "category": "IC",
+    "footprint": {
+      "type": "DIP",
+      "dimensions": { "rows": 2, "cols": 4, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "position": { "row": 0, "col": 2 } },
+      { "number": "4", "position": { "row": 0, "col": 3 } },
+      { "number": "5", "position": { "row": 3, "col": 3 } },
+      { "number": "6", "position": { "row": 3, "col": 2 } },
+      { "number": "7", "position": { "row": 3, "col": 1 } },
+      { "number": "8", "position": { "row": 3, "col": 0 } }
+    ],
+    "metadata": {
+      "description": "8-pin DIP (0.3\" wide, e.g. NE555, LM358)"
+    }
+  },
+  {
+    "id": "dip-14",
+    "name": "DIP-14 IC",
+    "category": "IC",
+    "footprint": {
+      "type": "DIP",
+      "dimensions": { "rows": 2, "cols": 7, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "position": { "row": 0, "col": 2 } },
+      { "number": "4", "position": { "row": 0, "col": 3 } },
+      { "number": "5", "position": { "row": 0, "col": 4 } },
+      { "number": "6", "position": { "row": 0, "col": 5 } },
+      { "number": "7", "position": { "row": 0, "col": 6 } },
+      { "number": "8", "position": { "row": 3, "col": 6 } },
+      { "number": "9", "position": { "row": 3, "col": 5 } },
+      { "number": "10", "position": { "row": 3, "col": 4 } },
+      { "number": "11", "position": { "row": 3, "col": 3 } },
+      { "number": "12", "position": { "row": 3, "col": 2 } },
+      { "number": "13", "position": { "row": 3, "col": 1 } },
+      { "number": "14", "position": { "row": 3, "col": 0 } }
+    ],
+    "metadata": {
+      "description": "14-pin DIP (0.3\" wide, e.g. 74HC00, LM324)"
+    }
+  },
+  {
+    "id": "dip-16",
+    "name": "DIP-16 IC",
+    "category": "IC",
+    "footprint": {
+      "type": "DIP",
+      "dimensions": { "rows": 2, "cols": 8, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "position": { "row": 0, "col": 2 } },
+      { "number": "4", "position": { "row": 0, "col": 3 } },
+      { "number": "5", "position": { "row": 0, "col": 4 } },
+      { "number": "6", "position": { "row": 0, "col": 5 } },
+      { "number": "7", "position": { "row": 0, "col": 6 } },
+      { "number": "8", "position": { "row": 0, "col": 7 } },
+      { "number": "9", "position": { "row": 3, "col": 7 } },
+      { "number": "10", "position": { "row": 3, "col": 6 } },
+      { "number": "11", "position": { "row": 3, "col": 5 } },
+      { "number": "12", "position": { "row": 3, "col": 4 } },
+      { "number": "13", "position": { "row": 3, "col": 3 } },
+      { "number": "14", "position": { "row": 3, "col": 2 } },
+      { "number": "15", "position": { "row": 3, "col": 1 } },
+      { "number": "16", "position": { "row": 3, "col": 0 } }
+    ],
+    "metadata": {
+      "description": "16-pin DIP (0.3\" wide, e.g. CD4017, 74HC595)"
+    }
+  },
+  {
+    "id": "resistor",
+    "name": "Resistor (Axial)",
+    "category": "Passive",
+    "footprint": {
+      "type": "Axial",
+      "dimensions": { "rows": 1, "cols": 4, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 3 } }
+    ],
+    "metadata": {
+      "description": "Standard axial resistor (4 hole spacing)"
+    }
+  },
+  {
+    "id": "resistor-small",
+    "name": "Resistor (Small)",
+    "category": "Passive",
+    "footprint": {
+      "type": "Axial",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "Small axial resistor (3 hole spacing)"
+    }
+  },
+  {
+    "id": "capacitor",
+    "name": "Capacitor (Radial)",
+    "category": "Passive",
+    "footprint": {
+      "type": "Radial",
+      "dimensions": { "rows": 1, "cols": 2, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "+", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "-", "position": { "row": 0, "col": 1 } }
+    ],
+    "metadata": {
+      "description": "Radial electrolytic capacitor (2 hole spacing)"
+    }
+  },
+  {
+    "id": "capacitor-wide",
+    "name": "Capacitor (Wide)",
+    "category": "Passive",
+    "footprint": {
+      "type": "Radial",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "+", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "-", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "Large radial electrolytic capacitor (3 hole spacing)"
+    }
+  },
+  {
+    "id": "led",
+    "name": "LED",
+    "category": "Discrete",
+    "footprint": {
+      "type": "Radial",
+      "dimensions": { "rows": 1, "cols": 2, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "A", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "K", "position": { "row": 0, "col": 1 } }
+    ],
+    "metadata": {
+      "description": "Standard 5mm LED (Anode/Cathode)"
+    }
+  },
+  {
+    "id": "transistor",
+    "name": "Transistor (TO-92)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "SIP",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "E", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "B", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "C", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "TO-92 transistor (E/B/C pinout)"
+    }
+  },
+  {
+    "id": "potentiometer",
+    "name": "Potentiometer",
+    "category": "Passive",
+    "footprint": {
+      "type": "SIP",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "W", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "3", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "Trimmer / potentiometer (3-pin SIP: pin 1, wiper, pin 3)"
+    }
+  },
+  {
+    "id": "header-1x4",
+    "name": "Pin Header 1x4",
+    "category": "Connector",
+    "footprint": {
+      "type": "SIP",
+      "dimensions": { "rows": 1, "cols": 4, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "position": { "row": 0, "col": 2 } },
+      { "number": "4", "position": { "row": 0, "col": 3 } }
+    ],
+    "metadata": {
+      "description": "4-pin single row header"
+    }
+  },
+  {
+    "id": "header-1x2",
+    "name": "Pin Header 1x2",
+    "category": "Connector",
+    "footprint": {
+      "type": "SIP",
+      "dimensions": { "rows": 1, "cols": 2, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 1 } }
+    ],
+    "metadata": {
+      "description": "2-pin single row header / terminal block"
+    }
+  }
+]

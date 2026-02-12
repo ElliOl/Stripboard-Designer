@@ -1,0 +1,123 @@
+:root {
+  /* ─── Radix-style Neutral Ramp ──────────────────────────── */
+  --gray-1: #09090b;
+  --gray-2: #0f0f12;
+  --gray-3: #16161a;
+  --gray-4: #1c1c22;
+  --gray-5: #24242c;
+  --gray-6: #2c2c36;
+  --gray-7: #38384a;
+  --gray-8: #4a4a5a;
+  --gray-9: #63637a;
+  --gray-10: #82829a;
+  --gray-11: #a6a6b8;
+  --gray-12: #ededf0;
+
+  /* ─── Neon Lime Accent (Primary) ────────────────────────── */
+  --lime-9: #c8ff2e;
+  --lime-10: #d4ff55;
+  --lime-11: #94cc15;
+  --lime-glow: rgba(200, 255, 46, 0.15);
+  --lime-subtle: rgba(200, 255, 46, 0.06);
+
+  /* ─── Tomato Accent ──────────────────────────────────────── */
+  --tomato-9: #ff6352;
+  --tomato-10: #ff7e70;
+  --tomato-11: #e54d3b;
+  --tomato-glow: rgba(255, 99, 82, 0.15);
+  --tomato-subtle: rgba(255, 99, 82, 0.06);
+
+  /* ─── Teal Accent ───────────────────────────────────────── */
+  --teal-9: #2dd4bf;
+  --teal-10: #5eead4;
+  --teal-11: #14b8a6;
+  --teal-glow: rgba(45, 212, 191, 0.15);
+  --teal-subtle: rgba(45, 212, 191, 0.06);
+
+  /* ─── Semantic Colors ───────────────────────────────────── */
+  --color-bg-primary: var(--gray-1);
+  --color-bg-secondary: var(--gray-2);
+  --color-bg-tertiary: var(--gray-3);
+  --color-bg-hover: var(--gray-4);
+
+  --color-text-primary: var(--gray-12);
+  --color-text-secondary: var(--gray-11);
+  --color-text-muted: var(--gray-8);
+
+  --color-accent: var(--lime-9);
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+  --color-error: #ff4060;
+
+  /* Stripboard-specific colors */
+  --color-strip: #c87533;
+  --color-wire: var(--teal-9);
+  --color-component: #8b5cf6;
+  --color-pin: #d4a017;
+  --color-grid: var(--gray-6);
+  --color-ratsnest: var(--gray-8);
+  --color-break: #ef4444;
+  --color-hole: var(--gray-2);
+
+  /* Spacing tokens */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  /* Grid settings */
+  --grid-pitch: 25.4px;
+  --strip-width: 20px;
+  --hole-diameter: 10px;
+  --component-pin-size: 8px;
+
+  /* Typography */
+  --font-family-mono: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  --font-family-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  --font-size-xs: 10px;
+  --font-size-sm: 12px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 20px;
+
+  /* Borders & Radii */
+  --border-radius-sm: 4px;
+  --border-radius-md: 6px;
+  --border-radius-lg: 8px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.2);
+
+  /* Z-index layers */
+  --z-grid: 0;
+  --z-strips: 10;
+  --z-components: 20;
+  --z-wires: 30;
+  --z-ratsnest: 5;
+  --z-selection: 40;
+  --z-ui: 100;
+}
+
+/* Base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-family-sans);
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  overflow: hidden;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}
