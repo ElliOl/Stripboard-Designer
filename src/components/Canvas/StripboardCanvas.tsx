@@ -29,7 +29,7 @@ const DRAG_THRESHOLD = 5; // pixels in screen space before a drag starts
  * Determine the default rotation for a component.
  * All components should be placed perpendicular to strips (90°) to avoid shorting.
  */
-function getDefaultRotation(definition: ComponentDefinition): 0 | 90 | 180 | 270 {
+function getDefaultRotation(_definition: ComponentDefinition): 0 | 90 | 180 | 270 {
   // All components should be perpendicular to strips (which run horizontally)
   return 90;
 }
