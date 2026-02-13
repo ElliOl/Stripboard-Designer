@@ -4,6 +4,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Prevent text selection on non-editable elements */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Allow text selection only in editable fields */
+input,
+textarea,
+[contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

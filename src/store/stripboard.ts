@@ -119,6 +119,22 @@ interface StripboardStore extends StripboardState {
     pinNumber: string,
     netId: string | undefined
   ) => void;
+  setAllNetsVisible: (visible: boolean) => void;
+  setNetSearchFilter: (filter: string) => void;
+  setComponentSearchFilter: (filter: string) => void;
+
+  // Net selection (inspector multi-select)
+  toggleNetSelection: (netId: string, multi?: boolean) => void;
+  setSelectedNetIds: (ids: string[]) => void;
+  clearNetSelection: () => void;
+
+  // Net groups
+  addNetGroup: (name: string, netIds: string[]) => void;
+  removeNetGroup: (id: string) => void;
+  dissolveNetGroup: (id: string) => void;
+  deleteNetGroupWithNets: (id: string) => void;
+  addNetsToGroup: (groupId: string, netIds: string[]) => void;
+  removeNetFromGroup: (groupId: string, netId: string) => void;
 
   // View
   setZoom: (zoom: number) => void;
@@ -198,6 +214,10 @@ const initialState: StripboardState = {
   performanceMode: 'auto', // Auto-detect and adapt to device performance
   realtimeRatsnest: true, // Enable real-time ratsnest updates
   importReport: null,
+  netGroups: [],
+  selectedNetIds: [],
+  netSearchFilter: '',
+  componentSearchFilter: '',
 };
 
 export const useStripboardStore = create<StripboardStore>((set, get) => ({
@@ -424,6 +444,92 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       ),
     })),
 
+  setAllNetsVisible: (visible) =>
+    set((state) => ({
+      nets: state.nets.map((n) => ({ ...n, visible })),
+    })),
+
+  setNetSearchFilter: (filter) => set({ netSearchFilter: filter }),
+  setComponentSearchFilter: (filter) => set({ componentSearchFilter: filter }),
+
+  // ─── Net Selection (inspector multi-select) ────────────────
+  toggleNetSelection: (netId, multi) =>
+    set((state) => {
+      if (multi) {
+        const has = state.selectedNetIds.includes(netId);
+        return {
+          selectedNetIds: has
+            ? state.selectedNetIds.filter((id) => id !== netId)
+            : [...state.selectedNetIds, netId],
+        };
+      }
+      return {
+        selectedNetIds: state.selectedNetIds.length === 1 && state.selectedNetIds[0] === netId
+          ? []
+          : [netId],
+      };
+    }),
+
+  setSelectedNetIds: (ids) => set({ selectedNetIds: ids }),
+  clearNetSelection: () => set({ selectedNetIds: [] }),
+
+  // ─── Net Groups ──────────────────────────────────────────────
+  addNetGroup: (name, netIds) =>
+    set((state) => ({
+      netGroups: [
+        ...state.netGroups,
+        { id: `netgroup-${Date.now()}`, name, netIds },
+      ],
+    })),
+
+  removeNetGroup: (id) =>
+    set((state) => ({
+      netGroups: state.netGroups.filter((g) => g.id !== id),
+    })),
+
+  dissolveNetGroup: (id) =>
+    set((state) => ({
+      netGroups: state.netGroups.filter((g) => g.id !== id),
+    })),
+
+  deleteNetGroupWithNets: (id) =>
+    set((state) => {
+      const group = state.netGroups.find((g) => g.id === id);
+      if (!group) return {};
+      const netIdsToRemove = new Set(group.netIds);
+      return {
+        netGroups: state.netGroups.filter((g) => g.id !== id),
+        nets: state.nets.filter((n) => !netIdsToRemove.has(n.id)),
+        components: state.components.map((c) => ({
+          ...c,
+          pins: c.pins.map((p) =>
+            p.netId && netIdsToRemove.has(p.netId) ? { ...p, netId: undefined } : p
+          ),
+        })),
+        wires: state.wires.map((w) =>
+          netIdsToRemove.has(w.netId) ? { ...w, netId: '' } : w
+        ),
+      };
+    }),
+
+  addNetsToGroup: (groupId, netIds) =>
+    set((state) => ({
+      netGroups: state.netGroups.map((g) =>
+        g.id === groupId
+          ? { ...g, netIds: [...new Set([...g.netIds, ...netIds])] }
+          : g
+      ),
+    })),
+
+  removeNetFromGroup: (groupId, netId) =>
+    set((state) => ({
+      netGroups: state.netGroups.map((g) =>
+        g.id === groupId
+          ? { ...g, netIds: g.netIds.filter((id) => id !== netId) }
+          : g
+      ),
+    })),
+
   // ─── View ─────────────────────────────────────────────────
   setZoom: (zoom) => set({ zoom: Math.max(0.15, Math.min(5, zoom)) }),
 
@@ -632,7 +738,20 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
 
   // ─── Library ──────────────────────────────────────────────
   loadComponentDefinitions: (definitions) =>
-    set({ componentDefinitions: definitions }),
+    set((state) => {
+      // Merge: keep existing generic/custom definitions not in the library
+      const existingGenerics = state.componentDefinitions.filter(
+        (d) => d.id.startsWith('generic-') || d.id.startsWith('custom-')
+      );
+      
+      // Build a map of library definition IDs for quick lookup
+      const libraryIds = new Set(definitions.map((d) => d.id));
+      
+      // Keep only generics that don't conflict with library definitions
+      const keptGenerics = existingGenerics.filter((g) => !libraryIds.has(g.id));
+      
+      return { componentDefinitions: [...definitions, ...keptGenerics] };
+    }),
 
   addComponentDefinition: (definition) =>
     set((state) => {
@@ -747,6 +866,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
         name: n.name || `Net${n.code}`,
         color: NET_COLORS[i % NET_COLORS.length],
         visible: true,
+        imported: true,
       }));
 
     // Track skipped and virtual components
@@ -855,6 +975,9 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       wires: [],
       selectedItems: [],
       importReport: report,
+      netGroups: [],
+      selectedNetIds: [],
+      netSearchFilter: '',
     });
 
     return report;

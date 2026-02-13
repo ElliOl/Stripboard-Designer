@@ -103,6 +103,7 @@ export const StripboardCanvas = () => {
   const selectedItems = useStripboardStore((s) => s.selectedItems);
   const componentDefinitions = useStripboardStore((s) => s.componentDefinitions);
   const realtimeRatsnest = useStripboardStore((s) => s.realtimeRatsnest);
+  const componentSearchFilter = useStripboardStore((s) => s.componentSearchFilter);
   
   // Actions
   const setZoom = useStripboardStore((s) => s.setZoom);
@@ -969,6 +970,11 @@ export const StripboardCanvas = () => {
             visibleComponents.map((c: ComponentType) => {
               const def = componentDefinitions.find(d => d.id === c.definitionId);
               if (!def) return null;
+              const compFilterActive = componentSearchFilter.trim().length > 0;
+              const compFilterMatch = !compFilterActive ||
+                c.reference.toLowerCase().includes(componentSearchFilter.toLowerCase()) ||
+                (c.value || '').toLowerCase().includes(componentSearchFilter.toLowerCase()) ||
+                (def.name || '').toLowerCase().includes(componentSearchFilter.toLowerCase());
               return (
                 <Component
                   key={c.id}
@@ -977,7 +983,7 @@ export const StripboardCanvas = () => {
                   isSelected={selectedItems.includes(c.id)}
                   showRefs={layerVisibility.refDesignations}
                   showValues={layerVisibility.values}
-                  highlightedNetId={highlightedNetId}
+                  highlightedNetId={compFilterActive && !compFilterMatch ? '__dim__' : highlightedNetId}
                   hlNetColor={hlNetColor}
                   connectedGroups={connectivity.connectedGroups}
                   zoom={zoom}

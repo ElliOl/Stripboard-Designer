@@ -25,12 +25,17 @@ export const ComponentLibrary = () => {
   
   // Track which categories are expanded (all expanded by default)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [libraryLoaded, setLibraryLoaded] = useState(false);
 
   useEffect(() => {
+    // Only load the library once to avoid overwriting dynamic definitions
+    if (libraryLoaded) return;
+    
     fetch('/components/library.json')
       .then((res) => res.json())
       .then((data: ComponentDefinition[]) => {
         loadComponentDefinitions(data);
+        setLibraryLoaded(true);
         // Expand all categories by default
         const categories = [...new Set(data.map(c => c.category))];
         setExpandedCategories(new Set(categories));
@@ -38,7 +43,7 @@ export const ComponentLibrary = () => {
       .catch((err) =>
         console.error('Failed to load component library:', err)
       );
-  }, [loadComponentDefinitions]);
+  }, [loadComponentDefinitions, libraryLoaded]);
 
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => {

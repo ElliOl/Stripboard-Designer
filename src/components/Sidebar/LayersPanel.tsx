@@ -135,7 +135,7 @@ export const LayersPanel = () => {
   return (
     <div className="flex flex-col h-full">
       <div className="px-3 pt-3 pb-2 flex items-center justify-between border-b border-[#1c1c22]">
-        <span className="text-[10px] font-semibold text-[#4a4a5a] uppercase tracking-wider">
+        <span className="text-xs font-semibold text-[#a6a6b8] uppercase tracking-wider">
           Layer Visibility
         </span>
         <button

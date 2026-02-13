@@ -13,6 +13,13 @@ export type Net = {
   name: string;
   color: string;
   visible?: boolean; // Whether ratsnest for this net is visible (default true)
+  imported?: boolean; // Whether this net came from a netlist import
+};
+
+export type NetGroup = {
+  id: string;
+  name: string;
+  netIds: string[];
 };
 
 export type PinDefinition = {
@@ -170,6 +177,14 @@ export type StripboardState = {
   selectedItems: string[]; // IDs of selected items
   hoveredItem: string | null;
   highlightedNetId: string | null; // Net selected for highlighting
+
+  // Net management
+  netGroups: NetGroup[];
+  selectedNetIds: string[]; // Multi-selected net IDs in the inspector
+  netSearchFilter: string; // Filter text for the net search box
+
+  // Component filter
+  componentSearchFilter: string; // Filter text for the component search box
 
   // Component library
   componentDefinitions: ComponentDefinition[];
