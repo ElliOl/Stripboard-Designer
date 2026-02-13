@@ -10,10 +10,12 @@ import {
   Waypoints,
   GripHorizontal,
   AlertTriangle,
+  Settings,
 } from 'lucide-react';
 import { useStripboardStore } from '@/store/stripboard';
 import { parseKiCadNetlist } from '@/lib/netlist-parser';
 import type { ToolType } from '@/lib/types';
+import { SettingsDialog } from '@/components/SettingsDialog';
 
 const tools: Array<{
   type: ToolType;
@@ -41,6 +43,9 @@ export const Toolbar = () => {
     toggleLayer,
   } = useStripboardStore();
 
+  // ─── Settings Dialog State ────────────────────────────────
+  const [showSettings, setShowSettings] = useState(false);
+
   // ─── Drag State ───────────────────────────────────────────
   const [pos, setPos] = useState({ x: 16, y: 16 });
   const [dragging, setDragging] = useState(false);
@@ -52,13 +57,28 @@ export const Toolbar = () => {
     dragOffset.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
   };
 
+  const toolbarRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!dragging) return;
     const onMove = (e: MouseEvent) => {
-      setPos({
-        x: e.clientX - dragOffset.current.x,
-        y: e.clientY - dragOffset.current.y,
-      });
+      let x = e.clientX - dragOffset.current.x;
+      let y = e.clientY - dragOffset.current.y;
+
+      // Clamp to keep toolbar within viewport
+      const el = toolbarRef.current;
+      if (el) {
+        const w = el.offsetWidth;
+        const h = el.offsetHeight;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const padding = 8;
+
+        x = Math.max(padding, Math.min(x, vw - w - padding));
+        y = Math.max(padding, Math.min(y, vh - h - padding));
+      }
+
+      setPos({ x, y });
     };
     const onUp = () => setDragging(false);
     window.addEventListener('mousemove', onMove);
@@ -152,6 +172,7 @@ export const Toolbar = () => {
 
   return (
     <div
+      ref={toolbarRef}
       className="absolute z-50 flex flex-col items-center rounded-2xl select-none"
       style={{
         left: pos.x,
@@ -226,6 +247,18 @@ export const Toolbar = () => {
 
       <Sep />
 
+      {/* ─── Settings ──────────────────────────────────────── */}
+      <div className="flex flex-col items-center px-1.5 gap-0.5">
+        <ToolBtn
+          icon={Settings}
+          onClick={() => setShowSettings(true)}
+          title="Settings"
+          size={16}
+        />
+      </div>
+
+      <Sep />
+
       {/* ─── File Operations ──────────────────────────────── */}
       <div className="flex flex-col items-center px-1.5 gap-0.5 pb-2.5">
         <ToolBtn
@@ -247,6 +280,11 @@ export const Toolbar = () => {
           size={15}
         />
       </div>
+
+      {/* ─── Settings Dialog ───────────────────────────────── */}
+      {showSettings && (
+        <SettingsDialog onClose={() => setShowSettings(false)} />
+      )}
     </div>
   );
 };

@@ -24,6 +24,16 @@ import {
   mapFootprintToDefinition,
   isVirtualRef,
 } from '@/lib/netlist-parser';
+import { createGenericDefinition } from '@/lib/component-utils';
+
+/**
+ * Determine the default rotation for a component.
+ * All components should be placed perpendicular to strips (90°) to avoid shorting.
+ */
+function getDefaultRotation(definition: ComponentDefinition): 0 | 90 | 180 | 270 {
+  // All components should be perpendicular to strips (which run horizontally)
+  return 90;
+}
 
 const NET_COLORS = [
   '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e',
@@ -114,6 +124,12 @@ interface StripboardStore extends StripboardState {
   setZoom: (zoom: number) => void;
   setPan: (pan: Point) => void;
 
+  // Performance
+  setPerformanceMode: (mode: 'auto' | 'quality' | 'performance') => void;
+
+  // Settings
+  setRealtimeRatsnest: (enabled: boolean) => void;
+
   // Selection
   selectItem: (id: string, multi?: boolean) => void;
   setSelectedItems: (ids: string[]) => void;
@@ -139,6 +155,7 @@ interface StripboardStore extends StripboardState {
 
   // Library
   loadComponentDefinitions: (definitions: ComponentDefinition[]) => void;
+  addComponentDefinition: (definition: ComponentDefinition) => void;
 
   // Board
   setBoardSize: (rows: number, cols: number) => void;
@@ -178,6 +195,8 @@ const initialState: StripboardState = {
   ratsnestColorMode: 'colored', // Default to colored ratsnest lines
   zoom: 1,
   pan: { x: 60, y: 60 },
+  performanceMode: 'auto', // Auto-detect and adapt to device performance
+  realtimeRatsnest: true, // Enable real-time ratsnest updates
   importReport: null,
 };
 
@@ -410,6 +429,11 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
 
   setPan: (pan) => set({ pan }),
 
+  setPerformanceMode: (mode) => set({ performanceMode: mode }),
+
+  // ─── Settings ─────────────────────────────────────────────
+  setRealtimeRatsnest: (enabled: boolean) => set({ realtimeRatsnest: enabled }),
+
   // ─── Selection ────────────────────────────────────────────
   selectItem: (id, multi = false) =>
     set((state) => ({
@@ -610,6 +634,16 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
   loadComponentDefinitions: (definitions) =>
     set({ componentDefinitions: definitions }),
 
+  addComponentDefinition: (definition) =>
+    set((state) => {
+      // Don't add if ID already exists
+      if (state.componentDefinitions.some((d) => d.id === definition.id))
+        return {};
+      return {
+        componentDefinitions: [...state.componentDefinitions, definition],
+      };
+    }),
+
   // ─── Board ────────────────────────────────────────────────
   setBoardSize: (rows, cols) => {
     const state = get();
@@ -681,7 +715,8 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
   // ─── Netlist Import ──────────────────────────────────────
   importNetlist: (parsed) => {
     const state = get();
-    const defs = state.componentDefinitions;
+    // Mutable copy — we may add generic definitions during import
+    const defs = [...state.componentDefinitions];
 
     const emptyReport: ImportReport = {
       importedComponents: 0,
@@ -693,6 +728,15 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
     if (defs.length === 0) {
       console.error('Component library not loaded yet');
       return emptyReport;
+    }
+
+    // ── Collect pin numbers per component ref (for generic fallback) ──
+    const pinsByRef = new Map<string, Set<string>>();
+    for (const net of parsed.nets) {
+      for (const node of net.nodes) {
+        if (!pinsByRef.has(node.ref)) pinsByRef.set(node.ref, new Set());
+        pinsByRef.get(node.ref)!.add(node.pin);
+      }
     }
 
     // Create nets
@@ -709,7 +753,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
     const skippedComponents: SkippedComponent[] = [];
     const virtualComponents: { ref: string; value: string }[] = [];
 
-    // Auto-place components on the board
+    // Auto-place components on the board — tight spacing (1-hole gap)
     const newComponents: Component[] = [];
     let curRow = 2;
     let curCol = 2;
@@ -722,64 +766,60 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
         continue;
       }
 
-      const defId = mapFootprintToDefinition(pc.footprint, pc.ref);
+      let defId = mapFootprintToDefinition(pc.footprint, pc.ref);
+      let def = defId ? defs.find((d) => d.id === defId) : null;
 
-      // Unsupported footprint / component type
-      if (defId === null) {
-        skippedComponents.push({
-          ref: pc.ref,
-          value: pc.value,
-          footprint: pc.footprint,
-          reason: 'Unsupported component type',
-        });
-        continue;
+      // ── Unknown / missing definition → create generic component ──
+      if (!defId || !def) {
+        const pinSet = pinsByRef.get(pc.ref);
+        const pinNumbers = pinSet && pinSet.size > 0
+          ? [...pinSet]
+          : ['1', '2']; // fallback to 2-pin if no net references
+
+        const genericDef = createGenericDefinition(pinNumbers);
+        // Re-use existing generic or add new one
+        const existing = defs.find((d) => d.id === genericDef.id);
+        if (!existing) {
+          defs.push(genericDef);
+        }
+        defId = genericDef.id;
+        def = existing || genericDef;
       }
 
-      const def = defs.find((d) => d.id === defId);
-      if (!def) {
-        skippedComponents.push({
-          ref: pc.ref,
-          value: pc.value,
-          footprint: pc.footprint,
-          reason: `Definition "${defId}" not found in library`,
-        });
-        continue;
-      }
+      // Determine appropriate rotation for this component
+      const rotation = getDefaultRotation(def);
+      
+      // Get rotated pin positions for layout calculation
+      const rotatedPinPositions = getRotatedPinPositions(def.pins, rotation);
+      const rotatedWidth = Math.max(...rotatedPinPositions.map((p) => p.col)) + 1;
+      const rotatedHeight = Math.max(...rotatedPinPositions.map((p) => p.row)) + 1;
 
-      const pWidth = Math.max(...def.pins.map((p) => p.position.col)) + 1;
-      const pHeight = Math.max(...def.pins.map((p) => p.position.row)) + 1;
-
-      // Wrap to next row if needed
-      if (curCol + pWidth > state.cols - 2) {
-        curRow += maxH + 3;
+      // Wrap to next row if needed (using board width for wrapping)
+      if (curCol + rotatedWidth > state.cols - 2) {
+        curRow += maxH + 1;
         curCol = 2;
         maxH = 0;
       }
-      if (curRow + pHeight > state.rows - 2) {
-        skippedComponents.push({
-          ref: pc.ref,
-          value: pc.value,
-          footprint: pc.footprint,
-          reason: 'Board full — no space to place',
-        });
-        continue;
-      }
+
+      // NOTE: No "board full" skip — overflow components are placed
+      // outside the board so users can drag them in later.
 
       const pos: GridPosition = { row: curRow, col: curCol };
 
-      // Map netlist nets → pin netIds
-      const pins: ComponentPin[] = def.pins.map((pDef) => {
+      // Map netlist nets → pin netIds with rotated positions
+      const pins: ComponentPin[] = def.pins.map((pDef, idx) => {
         const netEntry = parsed.nets.find((n) =>
           n.nodes.some(
             (node) => node.ref === pc.ref && node.pin === pDef.number
           )
         );
+        const rotatedPos = rotatedPinPositions[idx];
         return {
           number: pDef.number,
           netId: netEntry ? `net-${netEntry.code}` : undefined,
           position: {
-            row: pos.row + pDef.position.row,
-            col: pos.col + pDef.position.col,
+            row: pos.row + rotatedPos.row,
+            col: pos.col + rotatedPos.col,
           },
           extended: 0,
         };
@@ -791,12 +831,12 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
         value: pc.value || undefined,
         definitionId: defId,
         position: pos,
-        rotation: 0,
+        rotation,
         pins,
       });
 
-      curCol += pWidth + 3;
-      maxH = Math.max(maxH, pHeight);
+      curCol += rotatedWidth + 1;
+      maxH = Math.max(maxH, rotatedHeight);
     }
 
     const report: ImportReport = {
@@ -809,6 +849,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
     state.saveToHistory();
     set({
       components: newComponents,
+      componentDefinitions: defs,
       nets: newNets,
       strips: generateStrips(state.rows, state.cols),
       wires: [],

@@ -1,26 +1,40 @@
-import { Circle, Rect, Text } from 'react-konva';
+import { Shape, Rect, Text } from 'react-konva';
 import { useStripboardStore } from '@/store/stripboard';
+import type { ViewportBounds } from '@/utils/viewport';
 
 const GRID_PITCH = 25.4;
 const HOLE_RADIUS = 3.5;
 
-export const Grid = () => {
-  const { rows, cols } = useStripboardStore();
+interface GridProps {
+  viewportBounds?: ViewportBounds;
+}
+
+export const Grid = ({ viewportBounds }: GridProps) => {
+  // Individual selectors
+  const rows = useStripboardStore((s) => s.rows);
+  const cols = useStripboardStore((s) => s.cols);
 
   const boardPadding = GRID_PITCH * 0.55;
   const boardWidth = (cols - 1) * GRID_PITCH + boardPadding * 2;
   const boardHeight = (rows - 1) * GRID_PITCH + boardPadding * 2;
 
-  const holes = [];
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      holes.push({
-        key: `${row}-${col}`,
-        x: col * GRID_PITCH,
-        y: row * GRID_PITCH,
-      });
-    }
-  }
+  // Determine visible range for holes
+  const startRow = viewportBounds
+    ? Math.max(0, viewportBounds.minRow)
+    : 0;
+  const endRow = viewportBounds
+    ? Math.min(rows - 1, viewportBounds.maxRow)
+    : rows - 1;
+  const startCol = viewportBounds
+    ? Math.max(0, viewportBounds.minCol)
+    : 0;
+  const endCol = viewportBounds
+    ? Math.min(cols - 1, viewportBounds.maxCol)
+    : cols - 1;
+
+  // LOD: Get zoom from store for label visibility
+  const zoom = useStripboardStore((s) => s.zoom);
+  const showGridLabels = zoom > 0.3;
 
   // Labels every 5 positions
   const rowLabels = [];
@@ -70,22 +84,30 @@ export const Grid = () => {
         listening={false}
       />
 
-      {/* Holes */}
-      {holes.map((hole) => (
-        <Circle
-          key={hole.key}
-          x={hole.x}
-          y={hole.y}
-          radius={HOLE_RADIUS}
-          fill="#0a0a0e"
-          stroke="#28282e"
-          strokeWidth={0.6}
-          listening={false}
-        />
-      ))}
+      {/* Holes - Single Shape using sceneFunc for performance */}
+      <Shape
+        sceneFunc={(ctx, _shape) => {
+          ctx.fillStyle = '#0a0a0e';
+          ctx.strokeStyle = '#28282e';
+          ctx.lineWidth = 0.6;
+          
+          for (let row = startRow; row <= endRow; row++) {
+            for (let col = startCol; col <= endCol; col++) {
+              const x = col * GRID_PITCH;
+              const y = row * GRID_PITCH;
+              
+              ctx.beginPath();
+              ctx.arc(x, y, HOLE_RADIUS, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+            }
+          }
+        }}
+        listening={false}
+      />
 
       {/* Row labels */}
-      {rowLabels.map(({ row, label }) => (
+      {showGridLabels && rowLabels.map(({ row, label }) => (
         <Text
           key={`rl-${row}`}
           x={-boardPadding - 16}
@@ -99,7 +121,7 @@ export const Grid = () => {
       ))}
 
       {/* Column labels */}
-      {colLabels.map(({ col, label }) => (
+      {showGridLabels && colLabels.map(({ col, label }) => (
         <Text
           key={`cl-${col}`}
           x={col * GRID_PITCH - (label.length > 1 ? 5 : 2)}

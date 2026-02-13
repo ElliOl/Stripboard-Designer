@@ -22,10 +22,12 @@ export type PinDefinition = {
   position: GridPosition; // Relative to component origin
 };
 
+export type ComponentCategory = 'IC' | 'Passive' | 'Connector' | 'Discrete' | 'Custom';
+
 export type ComponentDefinition = {
   id: string;
   name: string;
-  category: 'IC' | 'Passive' | 'Connector' | 'Discrete';
+  category: ComponentCategory;
   footprint: FootprintType;
   pins: PinDefinition[];
   metadata?: {
@@ -187,6 +189,12 @@ export type StripboardState = {
   // View state
   zoom: number;
   pan: Point;
+
+  // Performance mode
+  performanceMode: 'auto' | 'quality' | 'performance';
+
+  // Settings
+  realtimeRatsnest: boolean; // If true, ratsnest updates synchronously (slower but instant feedback)
 
   // Netlist import report (null when no import has been done)
   importReport: ImportReport | null;

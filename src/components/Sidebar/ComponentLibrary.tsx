@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Cpu, Zap, Radio, CircuitBoard, ChevronDown, ChevronRight } from 'lucide-react';
+import { Cpu, Zap, Radio, CircuitBoard, ChevronDown, ChevronRight, Box } from 'lucide-react';
 import { useStripboardStore } from '@/store/stripboard';
 import type { ComponentDefinition } from '@/lib/types';
 
@@ -8,6 +8,7 @@ const categoryIcons: Record<string, React.ElementType> = {
   Passive: Zap,
   Connector: Radio,
   Discrete: CircuitBoard,
+  Custom: Box,
 };
 
 const categoryColors: Record<string, string> = {
@@ -15,6 +16,7 @@ const categoryColors: Record<string, string> = {
   Passive: '#c8ff2e',
   Connector: '#c8ff2e',
   Discrete: '#c8ff2e',
+  Custom: '#a78bfa',
 };
 
 export const ComponentLibrary = () => {

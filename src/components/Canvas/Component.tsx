@@ -1,42 +1,39 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import { Group, Rect, Circle, Text, Line } from 'react-konva';
-import type { Component as ComponentType } from '@/lib/types';
-import { useStripboardStore } from '@/store/stripboard';
+import type { Component as ComponentType, ComponentDefinition } from '@/lib/types';
 import { getRotatedPinPositions } from '@/lib/rotation';
-import { arePinsConnectedEnhanced } from '@/lib/connectivity';
+import { posKey } from '@/lib/spatial-index';
 
 const GP = 25.4; // grid pitch
 const PIN_R = 4.5;
 
 interface ComponentProps {
   component: ComponentType;
+  definition: ComponentDefinition;
+  isSelected: boolean;
   showRefs?: boolean;
   showValues?: boolean;
   highlightedNetId?: string | null;
+  hlNetColor?: string;
+  connectedGroups?: Map<string, Array<Set<string>>>;
+  zoom: number;
 }
 
-export const Component = ({
+export const Component = memo(({
   component,
+  definition,
+  isSelected,
   showRefs = true,
   showValues = false,
   highlightedNetId,
+  hlNetColor,
+  connectedGroups,
+  zoom,
 }: ComponentProps) => {
-  const {
-    selectedItems,
-    setHoveredItem,
-    componentDefinitions,
-    nets,
-    strips,
-    wires,
-    components: allComponents,
-  } = useStripboardStore();
-
-  const definition = componentDefinitions.find(
-    (d) => d.id === component.definitionId
-  );
-  if (!definition) return null;
-
-  const isSelected = selectedItems.includes(component.id);
+  // ─── Level of Detail Thresholds ───────────────────────────────
+  const showPinNumbers = zoom > 0.7;
+  const showLabels = zoom > 0.5;
+  const showShadows = zoom > 0.4;
 
   // ─── Rotated positions (relative to component origin) ────
   const rotatedPins = getRotatedPinPositions(
@@ -53,6 +50,7 @@ export const Component = ({
   const isAxial = definition.footprint.type === 'Axial';
   const isRadial = definition.footprint.type === 'Radial';
   const isSIP = definition.footprint.type === 'SIP';
+  const isCustom = definition.footprint.type === 'Custom';
 
   // Body bounding box
   const pad = isIC ? GP * 0.35 : GP * 0.3;
@@ -83,61 +81,40 @@ export const Component = ({
     };
   })();
 
-  // ─── Net Highlighting (respects strip cuts) ────────────────
-  // A pin highlights if it belongs to the highlighted net AND sits
-  // on a strip segment that still carries that net (i.e. it wasn't
-  // cut off from the rest of the net).  Pins not on any strip still
-  // highlight normally (they're just unrouted pads).
+  // ─── Net Highlighting (using pre-computed connectivity groups) ────────────────
+  // A pin highlights if it belongs to the highlighted net AND is in a connected
+  // group with other pins of the same net.
   const highlightedPinNumbers = useMemo(() => {
     const result = new Set<string>();
-    if (!highlightedNetId) return result;
+    if (!highlightedNetId || !connectedGroups) return result;
 
     const myNetPins = component.pins.filter(p => p.netId === highlightedNetId);
     if (myNetPins.length === 0) return result;
 
-    // Gather all net-pin positions from every component on the board
-    const allNetPositions = allComponents.flatMap(c =>
-      c.pins
-        .filter(p => p.netId === highlightedNetId)
-        .map(p => p.position)
-    );
+    // Get connected groups for this net
+    const groups = connectedGroups.get(highlightedNetId) || [];
+    if (groups.length === 0) {
+      // No connectivity info - highlight all pins
+      myNetPins.forEach(p => result.add(p.number));
+      return result;
+    }
 
+    // For each pin, check if it's in any connected group
     for (const pin of myNetPins) {
-      // Find the strip segment this pin sits on (if any)
-      const stripAtPin = strips.find(
-        s => s.row === pin.position.row &&
-          pin.position.col >= s.startCol &&
-          pin.position.col <= s.endCol
-      );
-
-      if (!stripAtPin) {
-        // Pin is not on any strip -- still belongs to the net, highlight it
-        result.add(pin.number);
-        continue;
-      }
-
-      // Pin is on a strip -- check if it is connected to at least one
-      // other pin in the same net (respecting cuts)
-      const isConnected = allNetPositions.some(otherPos => {
-        if (otherPos.row === pin.position.row && otherPos.col === pin.position.col) return false;
-        return arePinsConnectedEnhanced(
-          pin.position, otherPos, strips, wires, highlightedNetId, allComponents
-        );
-      });
-
-      if (isConnected) {
-        result.add(pin.number);
+      const pinKey = posKey(pin.position);
+      for (const group of groups) {
+        if (group.has(pinKey)) {
+          result.add(pin.number);
+          break;
+        }
       }
     }
+
     return result;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [highlightedNetId, component.pins, strips, wires, allComponents]);
+  }, [highlightedNetId, component.pins, connectedGroups]);
 
   const hasHighlightedPin = highlightedPinNumbers.size > 0;
   const isDimmed = !!highlightedNetId && !hasHighlightedPin;
-  const hlNetColor = highlightedNetId
-    ? nets.find((n) => n.id === highlightedNetId)?.color
-    : undefined;
 
   return (
     <Group
@@ -145,8 +122,6 @@ export const Component = ({
       x={component.position.col * GP}
       y={component.position.row * GP}
       opacity={isDimmed ? 0.2 : 1}
-      onMouseEnter={() => setHoveredItem(component.id)}
-      onMouseLeave={() => setHoveredItem(null)}
     >
       {/* ═══════════════════════════════════════════════════════
           LAYER 1 — Bodies & decorative shapes
@@ -164,9 +139,9 @@ export const Component = ({
             stroke={isSelected ? '#c8ff2e' : '#2a2a4e'}
             strokeWidth={isSelected ? 2.5 : 1.5}
             cornerRadius={3}
-            shadowColor="#000"
-            shadowBlur={6}
-            shadowOpacity={0.4}
+            shadowColor={showShadows ? "#000" : undefined}
+            shadowBlur={showShadows ? 6 : 0}
+            shadowOpacity={showShadows ? 0.4 : 0}
           />
           {/* Pin 1 notch */}
           <Circle
@@ -297,9 +272,9 @@ export const Component = ({
                 : '#1e3a8a'
             }
             strokeWidth={isSelected ? 2 : 1.5}
-            shadowColor="#000"
-            shadowBlur={4}
-            shadowOpacity={0.3}
+            shadowColor={showShadows ? "#000" : undefined}
+            shadowBlur={showShadows ? 4 : 0}
+            shadowOpacity={showShadows ? 0.3 : 0}
           />
           {definition.id.includes('led') && (
             <Circle
@@ -326,6 +301,37 @@ export const Component = ({
           strokeWidth={isSelected ? 2 : 1}
           cornerRadius={2}
         />
+      )}
+
+      {/* ─── Custom / Generic Body ───────────────────────────── */}
+      {isCustom && (
+        <>
+          <Rect
+            x={bodyX}
+            y={bodyY}
+            width={bodyW}
+            height={bodyH}
+            fill="#1c1a2e"
+            stroke={isSelected ? '#c8ff2e' : '#7c6faa'}
+            strokeWidth={isSelected ? 2.5 : 1.5}
+            cornerRadius={3}
+            dash={[5, 3]}
+            shadowColor={showShadows ? "#000" : undefined}
+            shadowBlur={showShadows ? 4 : 0}
+            shadowOpacity={showShadows ? 0.3 : 0}
+          />
+          {/* "?" indicator to show it's a generic/configurable component */}
+          <Text
+            x={bodyX + bodyW - 12}
+            y={bodyY + 2}
+            text="?"
+            fontSize={9}
+            fontFamily="monospace"
+            fill="#7c6faa"
+            fontStyle="bold"
+            listening={false}
+          />
+        </>
       )}
 
       {/* ═══════════════════════════════════════════════════════
@@ -362,7 +368,7 @@ export const Component = ({
           ═══════════════════════════════════════════════════════ */}
 
       {/* ─── IC text ────────────────────────────────────────── */}
-      {isIC && showRefs && (
+      {isIC && showRefs && showLabels && (
         <Text
           x={bodyX}
           y={bodyY + bodyH / 2 - (showValues && component.value ? 9 : 5)}
@@ -376,7 +382,7 @@ export const Component = ({
           listening={false}
         />
       )}
-      {isIC && showValues && component.value && (
+      {isIC && showValues && showLabels && component.value && (
         <Text
           x={bodyX}
           y={bodyY + bodyH / 2 + (showRefs ? 3 : -5)}
@@ -391,7 +397,7 @@ export const Component = ({
       )}
 
       {/* ─── Axial (Resistor) text ──────────────────────────── */}
-      {isAxial && showRefs && (
+      {isAxial && showRefs && showLabels && (
         <Text
           x={isHoriz ? bodyX : rMinCol * GP + 9}
           y={
@@ -410,7 +416,7 @@ export const Component = ({
           listening={false}
         />
       )}
-      {isAxial && showValues && component.value && (
+      {isAxial && showValues && showLabels && component.value && (
         <Text
           x={isHoriz ? bodyX : rMinCol * GP + 9}
           y={
@@ -442,7 +448,7 @@ export const Component = ({
       )}
 
       {/* ─── Radial text (centered inside body) ────────────── */}
-      {isRadial && showRefs && (
+      {isRadial && showRefs && showLabels && (
         <Text
           x={((rMinCol + rMaxCol) / 2) * GP - 20}
           y={((rMinRow + rMaxRow) / 2) * GP - (showValues && component.value ? 7 : 5)}
@@ -456,7 +462,7 @@ export const Component = ({
           listening={false}
         />
       )}
-      {isRadial && showValues && component.value && (
+      {isRadial && showValues && showLabels && component.value && (
         <Text
           x={((rMinCol + rMaxCol) / 2) * GP - 20}
           y={((rMinRow + rMaxRow) / 2) * GP + (showRefs ? 2 : -5)}
@@ -471,7 +477,7 @@ export const Component = ({
       )}
 
       {/* ─── SIP text ───────────────────────────────────────── */}
-      {isSIP && showRefs && (
+      {isSIP && showRefs && showLabels && (
         <Text
           x={isHoriz ? bodyX : bodyX + bodyW + 3}
           y={
@@ -490,7 +496,7 @@ export const Component = ({
           listening={false}
         />
       )}
-      {isSIP && showValues && component.value && (
+      {isSIP && showValues && showLabels && component.value && (
         <Text
           x={isHoriz ? bodyX : bodyX + bodyW + 3}
           y={
@@ -508,14 +514,43 @@ export const Component = ({
         />
       )}
 
+      {/* ─── Custom / Generic text ───────────────────────────── */}
+      {isCustom && showRefs && showLabels && (
+        <Text
+          x={bodyX}
+          y={bodyY + bodyH / 2 - (showValues && component.value ? 9 : 5)}
+          width={bodyW}
+          text={component.reference}
+          fontSize={10}
+          fontFamily="monospace"
+          fill="#a78bfa"
+          align="center"
+          fontStyle="bold"
+          listening={false}
+        />
+      )}
+      {isCustom && showValues && showLabels && component.value && (
+        <Text
+          x={bodyX}
+          y={bodyY + bodyH / 2 + (showRefs ? 2 : -5)}
+          width={bodyW}
+          text={component.value}
+          fontSize={8}
+          fontFamily="monospace"
+          fill="#8b7dc8"
+          align="center"
+          listening={false}
+        />
+      )}
+
       {/* ─── Pin numbers & names (centered on pins) ──────────── */}
-      {definition.pins.map((pinDef, i) => {
+      {showPinNumbers && definition.pins.map((pinDef, i) => {
         const rp = rotatedPins[i];
         const isPinHighlighted = highlightedPinNumbers.has(pinDef.number);
 
         return (
           <Group key={`pin-text-${pinDef.number}`}>
-            {showRefs && isIC && (
+            {showRefs && (isIC || isCustom) && (
               <Text
                 x={rp.col * GP - PIN_R}
                 y={rp.row * GP - 3.5}
@@ -548,4 +583,6 @@ export const Component = ({
       })}
     </Group>
   );
-};
+});
+
+Component.displayName = 'Component';

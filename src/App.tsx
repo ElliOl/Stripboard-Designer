@@ -1,10 +1,17 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { StripboardCanvas } from '@/components/Canvas/StripboardCanvas';
 import { Toolbar } from '@/components/Toolbar/Toolbar';
 import { ZoomIsland } from '@/components/Toolbar/ZoomIsland';
-import { Sidebar } from '@/components/Sidebar/Sidebar';
+import { FpsOverlay } from '@/components/Debug/FpsOverlay';
 import { useStripboardStore } from '@/store/stripboard';
 import '@/styles/globals.css';
+
+// Lazy load the sidebar for better initial load performance
+const Sidebar = lazy(() =>
+  import('@/components/Sidebar/Sidebar').then((module) => ({
+    default: module.Sidebar,
+  }))
+);
 
 function App() {
   const {
@@ -97,13 +104,19 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setActiveTool, undo, redo, removeSelected, deselectAll, rotateComponent, selectedItems, toggleRatsNest]);
 
+  // Check for ?perf query parameter
+  const showPerf = new URLSearchParams(window.location.search).has('perf');
+
   return (
     <div className="w-screen h-screen flex flex-col overflow-hidden bg-[#09090b]">
       <div className="flex-1 flex overflow-hidden relative">
         <StripboardCanvas />
         <Toolbar />
         <ZoomIsland />
-        <Sidebar />
+        <Suspense fallback={null}>
+          <Sidebar />
+        </Suspense>
+        {showPerf && <FpsOverlay />}
       </div>
       <StatusBar />
     </div>

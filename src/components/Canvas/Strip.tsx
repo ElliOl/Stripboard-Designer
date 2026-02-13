@@ -1,4 +1,5 @@
-import { Rect, Group, Circle } from 'react-konva';
+import { memo } from 'react';
+import { Rect, Group, Circle, Shape } from 'react-konva';
 import type { Strip as StripType, Component, Wire, NetHighlightMode } from '@/lib/types';
 import { getConnectionRanges } from '@/lib/strip-ranges';
 
@@ -57,7 +58,7 @@ function getStripSegments(strip: StripType): Array<{ startCol: number; endCol: n
   return segments;
 }
 
-export const Strip = ({
+export const Strip = memo(({
   strip,
   showCuts = false,
   showNetHighlight = false,
@@ -204,20 +205,18 @@ export const Strip = ({
         );
       })}
 
-      {/* Holes punched in the strip */}
-      {Array.from(
-        { length: strip.endCol - strip.startCol + 1 },
-        (_, i) => strip.startCol + i
-      ).map((col) => (
-        <Circle
-          key={`sh-${col}`}
-          x={col * GRID_PITCH}
-          y={strip.row * GRID_PITCH}
-          radius={3}
-          fill="#1c1c20"
-          listening={false}
-        />
-      ))}
+      {/* Holes punched in the strip - batched into single Shape */}
+      <Shape
+        sceneFunc={(ctx) => {
+          ctx.fillStyle = '#1c1c20';
+          for (let col = strip.startCol; col <= strip.endCol; col++) {
+            ctx.beginPath();
+            ctx.arc(col * GRID_PITCH, strip.row * GRID_PITCH, 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }}
+        listening={false}
+      />
 
       {/* Break markers */}
       {strip.breaks?.map((breakCol) => {
@@ -267,4 +266,6 @@ export const Strip = ({
       })}
     </Group>
   );
-};
+});
+
+Strip.displayName = 'Strip';

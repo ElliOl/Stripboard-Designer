@@ -1,44 +1,30 @@
+import { memo } from 'react';
 import { Line, Circle, Group } from 'react-konva';
 import type { Wire as WireType } from '@/lib/types';
-import { useStripboardStore } from '@/store/stripboard';
 
 const GRID_PITCH = 25.4;
 
 interface WireProps {
   wire: WireType;
-  detectedNetId: string | null;
+  isSelected: boolean;
+  wireColor: string;
   hasError: boolean;
+  effectiveNetId: string | null;
   highlightedNetId?: string | null;
 }
 
-export const Wire = ({ wire, detectedNetId, hasError, highlightedNetId }: WireProps) => {
-  const { selectedItems, setHoveredItem, nets } =
-    useStripboardStore();
-  const isSelected = selectedItems.includes(wire.id);
-
+export const Wire = memo(({ 
+  wire, 
+  isSelected, 
+  wireColor, 
+  hasError, 
+  effectiveNetId, 
+  highlightedNetId 
+}: WireProps) => {
   const flatPoints = wire.points.flatMap((p) => [
     p.col * GRID_PITCH,
     p.row * GRID_PITCH,
   ]);
-
-  // Determine the effective net this wire belongs to
-  const effectiveNetId = detectedNetId || wire.netId || null;
-
-  // Determine wire color:
-  // 1. If error: use red
-  // 2. If detectedNetId exists: use that net's color
-  // 3. If wire has explicit color: use it
-  // 4. Default: teal
-  let wireColor = '#2dd4bf'; // default
-  
-  if (hasError) {
-    wireColor = '#ef4444'; // red stroke for errors
-  } else if (detectedNetId) {
-    const net = nets.find((n) => n.id === detectedNetId);
-    if (net) wireColor = net.color;
-  } else if (wire.color) {
-    wireColor = wire.color;
-  }
 
   // Net highlighting
   const isNetHighlighted =
@@ -48,8 +34,6 @@ export const Wire = ({ wire, detectedNetId, hasError, highlightedNetId }: WirePr
   return (
     <Group
       name={`wire:${wire.id}`}
-      onMouseEnter={() => setHoveredItem(wire.id)}
-      onMouseLeave={() => setHoveredItem(null)}
       opacity={isDimmed ? 0.2 : 1}
     >
       {/* Invisible wide line for easier click targeting */}
@@ -89,4 +73,6 @@ export const Wire = ({ wire, detectedNetId, hasError, highlightedNetId }: WirePr
       ))}
     </Group>
   );
-};
+});
+
+Wire.displayName = 'Wire';

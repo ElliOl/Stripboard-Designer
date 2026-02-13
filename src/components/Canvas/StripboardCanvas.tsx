@@ -1,17 +1,38 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { Stage, Layer, Line, Circle, Group, Rect } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
-import type { GridPosition } from '@/lib/types';
+import type { GridPosition, RatsNestConnection, Component as ComponentType, Wire as WireType, ComponentDefinition } from '@/lib/types';
 import { Grid } from './Grid';
 import { Strip } from './Strip';
 import { Component } from './Component';
 import { Wire } from './Wire';
+import {
+  ComponentContextMenu,
+  type ContextMenuState,
+} from './ComponentContextMenu';
+import { EditComponentDialog } from '@/components/EditComponentDialog';
 import { useStripboardStore } from '@/store/stripboard';
 import { calculateRatsNest } from '@/lib/ratsnest';
 import { analyzeConnectivity } from '@/lib/connectivity';
+import {
+  getVisibleBounds,
+  isComponentVisible,
+  isStripVisible,
+  isWireVisible,
+} from '@/utils/viewport';
+import { getRotatedPinPositions } from '@/lib/rotation';
 
 const GRID_PITCH = 25.4;
 const DRAG_THRESHOLD = 5; // pixels in screen space before a drag starts
+
+/**
+ * Determine the default rotation for a component.
+ * All components should be placed perpendicular to strips (90°) to avoid shorting.
+ */
+function getDefaultRotation(definition: ComponentDefinition): 0 | 90 | 180 | 270 {
+  // All components should be perpendicular to strips (which run horizontally)
+  return 90;
+}
 
 // ─── Interaction State Types ─────────────────────────────────
 type InteractionState =
@@ -63,36 +84,40 @@ function getItemIdFromTarget(target: any): string | null {
 }
 
 export const StripboardCanvas = () => {
-  const {
-    strips,
-    components,
-    wires,
-    nets,
-    zoom,
-    pan,
-    rows,
-    cols,
-    showRatsNest,
-    layerVisibility,
-    highlightedNetId,
-    stripColor,
-    netHighlightMode,
-    ratsnestColorMode,
-    setZoom,
-    setPan,
-    activeTool,
-    selectedItems,
-    deselectAll,
-    setSelectedItems,
-    addToSelection,
-    removeFromSelection,
-    moveSelectedItems,
-    addComponent,
-    addWire,
-    toggleCut,
-    saveToHistory,
-    componentDefinitions,
-  } = useStripboardStore();
+  // Individual selectors to minimize rerenders
+  const strips = useStripboardStore((s) => s.strips);
+  const components = useStripboardStore((s) => s.components);
+  const wires = useStripboardStore((s) => s.wires);
+  const nets = useStripboardStore((s) => s.nets);
+  const zoom = useStripboardStore((s) => s.zoom);
+  const pan = useStripboardStore((s) => s.pan);
+  const rows = useStripboardStore((s) => s.rows);
+  const cols = useStripboardStore((s) => s.cols);
+  const showRatsNest = useStripboardStore((s) => s.showRatsNest);
+  const layerVisibility = useStripboardStore((s) => s.layerVisibility);
+  const highlightedNetId = useStripboardStore((s) => s.highlightedNetId);
+  const stripColor = useStripboardStore((s) => s.stripColor);
+  const netHighlightMode = useStripboardStore((s) => s.netHighlightMode);
+  const ratsnestColorMode = useStripboardStore((s) => s.ratsnestColorMode);
+  const activeTool = useStripboardStore((s) => s.activeTool);
+  const selectedItems = useStripboardStore((s) => s.selectedItems);
+  const componentDefinitions = useStripboardStore((s) => s.componentDefinitions);
+  const realtimeRatsnest = useStripboardStore((s) => s.realtimeRatsnest);
+  
+  // Actions
+  const setZoom = useStripboardStore((s) => s.setZoom);
+  const setPan = useStripboardStore((s) => s.setPan);
+  const deselectAll = useStripboardStore((s) => s.deselectAll);
+  const setSelectedItems = useStripboardStore((s) => s.setSelectedItems);
+  const addToSelection = useStripboardStore((s) => s.addToSelection);
+  const removeFromSelection = useStripboardStore((s) => s.removeFromSelection);
+  const moveSelectedItems = useStripboardStore((s) => s.moveSelectedItems);
+  const addComponent = useStripboardStore((s) => s.addComponent);
+  const addWire = useStripboardStore((s) => s.addWire);
+  const toggleCut = useStripboardStore((s) => s.toggleCut);
+  const saveToHistory = useStripboardStore((s) => s.saveToHistory);
+  const rotateComponent = useStripboardStore((s) => s.rotateComponent);
+  const removeComponent = useStripboardStore((s) => s.removeComponent);
 
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -114,21 +139,97 @@ export const StripboardCanvas = () => {
     y2: number;
   } | null>(null);
 
-  // ─── Connectivity Analysis ───────────────────────────────
-  const connectivity = useMemo(() => {
-    return analyzeConnectivity(components, strips, wires, nets);
+  // ─── Context Menu & Edit Dialog ───────────────────────────
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [editingComponentId, setEditingComponentId] = useState<string | null>(
+    null
+  );
+  const rightClickedRef = useRef<string | null>(null);
+
+  // ─── Connectivity Analysis (Deferred) ────────────────────────
+  const [connectivity, setConnectivity] = useState(() =>
+    analyzeConnectivity(components, strips, wires, nets)
+  );
+
+  useEffect(() => {
+    // Use requestIdleCallback if available, setTimeout as fallback
+    const scheduleUpdate = (callback: () => void) => {
+      if (typeof requestIdleCallback !== 'undefined') {
+        return requestIdleCallback(callback);
+      }
+      return setTimeout(callback, 0) as unknown as number;
+    };
+
+    const cancelUpdate = (id: number) => {
+      if (typeof cancelIdleCallback !== 'undefined') {
+        cancelIdleCallback(id);
+      } else {
+        clearTimeout(id);
+      }
+    };
+
+    const id = scheduleUpdate(() => {
+      const result = analyzeConnectivity(components, strips, wires, nets);
+      setConnectivity(result);
+    });
+
+    return () => cancelUpdate(id);
   }, [components, strips, wires, nets]);
 
-  // ─── Ratsnest (derived state) ──────────────────────────
-  const ratsNest = useMemo(() => {
-    if (nets.length === 0) return [];
+  // ─── Ratsnest (deferred or realtime based on setting) ────────
+  const [ratsNest, setRatsNest] = useState<RatsNestConnection[]>([]);
+
+  // Realtime ratsnest (synchronous useMemo)
+  const realtimeRatsNestValue = useMemo(() => {
+    if (!realtimeRatsnest || nets.length === 0) return [];
     const allConnections = calculateRatsNest(components, strips, wires, nets);
     // Filter out connections for hidden nets
     return allConnections.filter((conn) => {
       const net = nets.find((n) => n.id === conn.netId);
-      return net?.visible !== false; // Show by default if visible is undefined
+      return net?.visible !== false;
     });
-  }, [components, strips, wires, nets]);
+  }, [realtimeRatsnest, components, strips, wires, nets]);
+
+  // Deferred ratsnest (async)
+  useEffect(() => {
+    if (realtimeRatsnest) {
+      // Use realtime value
+      setRatsNest(realtimeRatsNestValue);
+      return;
+    }
+
+    if (nets.length === 0) {
+      setRatsNest([]);
+      return;
+    }
+
+    const scheduleUpdate = (callback: () => void) => {
+      if (typeof requestIdleCallback !== 'undefined') {
+        return requestIdleCallback(callback);
+      }
+      return setTimeout(callback, 0) as unknown as number;
+    };
+
+    const cancelUpdate = (id: number) => {
+      if (typeof cancelIdleCallback !== 'undefined') {
+        cancelIdleCallback(id);
+      } else {
+        clearTimeout(id);
+      }
+    };
+
+    const id = scheduleUpdate(() => {
+      const allConnections = calculateRatsNest(components, strips, wires, nets);
+      // Filter out connections for hidden nets
+      const visible = allConnections.filter((conn) => {
+        const net = nets.find((n) => n.id === conn.netId);
+        return net?.visible !== false; // Show by default if visible is undefined
+      });
+      setRatsNest(visible);
+    });
+
+    return () => cancelUpdate(id);
+  }, [realtimeRatsnest, realtimeRatsNestValue, components, strips, wires, nets]);
 
   // Net color lookup
   const netColorMap = useMemo(() => {
@@ -136,6 +237,34 @@ export const StripboardCanvas = () => {
     for (const n of nets) m.set(n.id, n.color);
     return m;
   }, [nets]);
+
+  // Highlighted net color for components
+  const hlNetColor = useMemo(() => {
+    if (!highlightedNetId) return undefined;
+    return nets.find(n => n.id === highlightedNetId)?.color;
+  }, [highlightedNetId, nets]);
+
+  // ─── Viewport Culling ──────────────────────────────────────
+  const viewportBounds = useMemo(() => {
+    return getVisibleBounds(zoom, pan, stageSize.width, stageSize.height);
+  }, [zoom, pan, stageSize.width, stageSize.height]);
+
+  // Filter visible items
+  const visibleComponents = useMemo(() => {
+    return components.filter((c) =>
+      isComponentVisible(c.position.row, c.position.col, viewportBounds)
+    );
+  }, [components, viewportBounds]);
+
+  const visibleStrips = useMemo(() => {
+    return strips.filter((s) =>
+      isStripVisible(s.row, s.startCol, s.endCol, viewportBounds)
+    );
+  }, [strips, viewportBounds]);
+
+  const visibleWires = useMemo(() => {
+    return wires.filter((w) => isWireVisible(w.points, viewportBounds));
+  }, [wires, viewportBounds]);
 
   // Reset drawing state when tool changes
   useEffect(() => {
@@ -334,10 +463,30 @@ export const StripboardCanvas = () => {
     [setPan]
   );
 
-  // ─── MOUSE DOWN (Konva — left button) ─────────────────────
+  // ─── MOUSE DOWN (Konva — left button + right-click detection) ──
   const handleMouseDown = (e: KonvaEventObject<MouseEvent>) => {
     const evt = e.evt;
-    if (evt.button !== 0) return; // Only handle left button in Konva
+
+    // Close any open context menu on any click
+    if (contextMenu) setContextMenu(null);
+
+    // Right-click: detect if clicking on a component for context menu
+    if (evt.button === 2) {
+      const itemId = getItemIdFromTarget(e.target);
+      if (itemId) {
+        const comp = components.find((c) => c.id === itemId);
+        if (comp) {
+          rightClickedRef.current = itemId;
+          // Stop propagation so the container handler doesn't start panning
+          evt.stopPropagation();
+          return;
+        }
+      }
+      rightClickedRef.current = null;
+      return;
+    }
+
+    if (evt.button !== 0) return; // Only handle left button from here on
 
     // ── Pan tool: left-click pans ─────────────────────────
     if (activeTool === 'pan') {
@@ -389,13 +538,21 @@ export const StripboardCanvas = () => {
   const handleMouseMove = (e: KonvaEventObject<MouseEvent>) => {
     const evt = e.evt;
 
-    // Always track cursor grid position
-    const grid = getGridFromPointer(e);
-    if (grid) setCursorGridPos(grid);
+    // Track cursor grid position only for tools that need it
+    if (activeTool === 'cutStrip' || activeTool === 'routeWire') {
+      const grid = getGridFromPointer(e);
+      if (grid) {
+        // Only update if position actually changed
+        setCursorGridPos(prev => 
+          (prev?.row === grid.row && prev?.col === grid.col) ? prev : grid
+        );
+      }
+    }
 
     // Wire routing preview
-    if (activeTool === 'routeWire' && wirePoints.length > 0 && grid) {
-      setWirePreviewPoint(grid);
+    if (activeTool === 'routeWire' && wirePoints.length > 0) {
+      const grid = getGridFromPointer(e);
+      if (grid) setWirePreviewPoint(grid);
     }
 
     const interaction = interactionRef.current;
@@ -623,18 +780,24 @@ export const StripboardCanvas = () => {
       .filter((n) => !isNaN(n));
     const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
 
+    // Determine appropriate rotation for this component
+    const rotation = getDefaultRotation(def);
+    
+    // Get rotated pin positions
+    const rotatedPinPositions = getRotatedPinPositions(def.pins, rotation);
+
     saveToHistory();
     addComponent({
       id: `comp-${Date.now()}`,
       reference: `${prefix}${nextNum}`,
       definitionId: def.id,
       position: pos,
-      rotation: 0,
-      pins: def.pins.map((pDef) => ({
-        number: pDef.number,
+      rotation,
+      pins: rotatedPinPositions.map((rotatedPos, idx) => ({
+        number: def.pins[idx].number,
         position: {
-          row: pos.row + pDef.position.row,
-          col: pos.col + pDef.position.col,
+          row: pos.row + rotatedPos.row,
+          col: pos.col + rotatedPos.col,
         },
         extended: 0,
       })),
@@ -646,10 +809,89 @@ export const StripboardCanvas = () => {
     e.dataTransfer.dropEffect = 'copy';
   };
 
-  // ─── Context Menu (prevent on right-click) ─────────────────
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
+  // ─── Context Menu (component right-click or suppress) ──────
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      // If a component was right-clicked (detected in handleMouseDown)
+      if (rightClickedRef.current) {
+        setContextMenu({
+          componentId: rightClickedRef.current,
+          x: e.clientX,
+          y: e.clientY,
+        });
+        rightClickedRef.current = null;
+      }
+    },
+    []
+  );
+
+  // ─── Context Menu Actions ─────────────────────────────────
+  const handleEditComponent = useCallback((id: string) => {
+    setEditingComponentId(id);
   }, []);
+
+  const handleRotateComponent = useCallback(
+    (id: string) => {
+      saveToHistory();
+      rotateComponent(id);
+    },
+    [saveToHistory, rotateComponent]
+  );
+
+  const handleDeleteComponent = useCallback(
+    (id: string) => {
+      saveToHistory();
+      removeComponent(id);
+    },
+    [saveToHistory, removeComponent]
+  );
+
+  const handleDuplicateComponent = useCallback(
+    (id: string) => {
+      const comp = components.find((c) => c.id === id);
+      if (!comp) return;
+      const def = componentDefinitions.find(
+        (d) => d.id === comp.definitionId
+      );
+      if (!def) return;
+
+      // Generate next reference number
+      const prefix = comp.reference.replace(/[0-9]/g, '');
+      const currentComponents = useStripboardStore.getState().components;
+      const nums = currentComponents
+        .filter((c) => c.reference.startsWith(prefix))
+        .map((c) => parseInt(c.reference.slice(prefix.length)))
+        .filter((n) => !isNaN(n));
+      const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+
+      // Place duplicate offset by 2 grid positions
+      const newPos = {
+        row: comp.position.row + 2,
+        col: comp.position.col + 2,
+      };
+
+      saveToHistory();
+      addComponent({
+        id: `comp-${Date.now()}`,
+        reference: `${prefix}${nextNum}`,
+        value: comp.value,
+        definitionId: comp.definitionId,
+        position: newPos,
+        rotation: comp.rotation,
+        pins: comp.pins.map((pin) => ({
+          number: pin.number,
+          netId: undefined,
+          position: {
+            row: newPos.row + (pin.position.row - comp.position.row),
+            col: newPos.col + (pin.position.col - comp.position.col),
+          },
+          extended: 0,
+        })),
+      });
+    },
+    [components, componentDefinitions, saveToHistory, addComponent]
+  );
 
   // ─── Computed ──────────────────────────────────────────────
   // Stage is NEVER natively draggable — all panning is manual
@@ -693,13 +935,14 @@ export const StripboardCanvas = () => {
         onMouseUp={handleMouseUp}
         onClick={handleClick}
       >
-        <Layer>
+        {/* Layer 1: Static board elements (grid + strips) */}
+        <Layer listening={false}>
           {/* Grid (board background + holes) */}
-          {layerVisibility.board && <Grid />}
+          {layerVisibility.board && <Grid viewportBounds={viewportBounds} />}
 
           {/* Copper strips */}
           {layerVisibility.strips &&
-            strips.map((s) => (
+            visibleStrips.map((s) => (
               <Strip
                 key={s.id}
                 strip={s}
@@ -717,31 +960,63 @@ export const StripboardCanvas = () => {
                 selectedItems={selectedItems}
               />
             ))}
+        </Layer>
 
+        {/* Layer 2: Interactive content (components + wires) */}
+        <Layer>
           {/* Components */}
           {layerVisibility.components &&
-            components.map((c) => (
-              <Component
-                key={c.id}
-                component={c}
-                showRefs={layerVisibility.refDesignations}
-                showValues={layerVisibility.values}
-                highlightedNetId={highlightedNetId}
-              />
-            ))}
+            visibleComponents.map((c: ComponentType) => {
+              const def = componentDefinitions.find(d => d.id === c.definitionId);
+              if (!def) return null;
+              return (
+                <Component
+                  key={c.id}
+                  component={c}
+                  definition={def}
+                  isSelected={selectedItems.includes(c.id)}
+                  showRefs={layerVisibility.refDesignations}
+                  showValues={layerVisibility.values}
+                  highlightedNetId={highlightedNetId}
+                  hlNetColor={hlNetColor}
+                  connectedGroups={connectivity.connectedGroups}
+                  zoom={zoom}
+                />
+              );
+            })}
 
           {/* Wires */}
           {layerVisibility.wires &&
-            wires.map((w) => (
-              <Wire
-                key={w.id}
-                wire={w}
-                detectedNetId={connectivity.wireNets.get(w.id) || null}
-                hasError={connectivity.wireErrors.has(w.id)}
-                highlightedNetId={highlightedNetId}
-              />
-            ))}
+            visibleWires.map((w: WireType) => {
+              const detectedNetId = connectivity.wireNets.get(w.id) || null;
+              const hasError = connectivity.wireErrors.has(w.id);
+              
+              // Determine wire color
+              let wireColor = '#2dd4bf'; // default
+              if (hasError) {
+                wireColor = '#ef4444';
+              } else if (detectedNetId) {
+                wireColor = netColorMap.get(detectedNetId) || '#2dd4bf';
+              } else if (w.color) {
+                wireColor = w.color;
+              }
+              
+              return (
+                <Wire
+                  key={w.id}
+                  wire={w}
+                  isSelected={selectedItems.includes(w.id)}
+                  wireColor={wireColor}
+                  hasError={hasError}
+                  effectiveNetId={detectedNetId || w.netId || null}
+                  highlightedNetId={highlightedNetId}
+                />
+              );
+            })}
+        </Layer>
 
+        {/* Layer 3: Overlays (ratsnest, selection box, tool cursors) */}
+        <Layer listening={false}>
           {/* Ratsnest */}
           {layerVisibility.ratsNest &&
             showRatsNest &&
@@ -862,6 +1137,26 @@ export const StripboardCanvas = () => {
           )}
         </Layer>
       </Stage>
+
+      {/* ── Component Context Menu (HTML overlay) ─────────── */}
+      {contextMenu && (
+        <ComponentContextMenu
+          state={contextMenu}
+          onClose={() => setContextMenu(null)}
+          onEditComponent={handleEditComponent}
+          onRotateComponent={handleRotateComponent}
+          onDeleteComponent={handleDeleteComponent}
+          onDuplicateComponent={handleDuplicateComponent}
+        />
+      )}
+
+      {/* ── Edit Component Dialog ────────────────────────── */}
+      {editingComponentId && (
+        <EditComponentDialog
+          componentId={editingComponentId}
+          onClose={() => setEditingComponentId(null)}
+        />
+      )}
     </div>
   );
 };

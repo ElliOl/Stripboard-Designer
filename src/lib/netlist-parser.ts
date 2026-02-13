@@ -212,10 +212,11 @@ export function mapFootprintToDefinition(
 ): string | null {
   const fp = footprint.toLowerCase();
 
-  // DIP packages
-  if (/dip[-_]?8\b/.test(fp)) return 'dip-8';
-  if (/dip[-_]?14\b/.test(fp)) return 'dip-14';
-  if (/dip[-_]?16\b/.test(fp)) return 'dip-16';
+  // DIP packages - match various formats like DIP-8, DIP_8, DIP-8_W7.62mm, Package_DIP:DIP-8, etc.
+  // Note: Using non-word boundary to handle cases like "DIP-16_W7.62mm"
+  if (/dip[-_]?8(?:\D|$)/.test(fp)) return 'dip-8';
+  if (/dip[-_]?14(?:\D|$)/.test(fp)) return 'dip-14';
+  if (/dip[-_]?16(?:\D|$)/.test(fp)) return 'dip-16';
 
   // Potentiometers / trimmers
   if (

@@ -10,4 +10,16 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Separate Konva into its own chunk for better caching
+          konva: ['konva', 'react-konva'],
+          // Vendor libraries
+          vendor: ['react', 'react-dom', 'zustand'],
+        },
+      },
+    },
+  },
 });
