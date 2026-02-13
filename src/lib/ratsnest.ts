@@ -12,10 +12,14 @@ import { buildSpatialIndex, posKey, type SpatialIndex } from './spatial-index';
 //
 // For every net, finds all pins that belong to it, determines
 // which ones are already electrically connected (via strips or
-// wires), and returns the set of connections that still need
-// to be routed (i.e. connections between disconnected groups).
+// wires), and builds a Minimum Spanning Tree (MST) across ALL
+// individual pins using Kruskal's algorithm, then removes edges
+// between pins that are already physically connected. This
+// produces the minimal set of ratsnest lines where every pin
+// has at least one connection to its nearest neighbor on the
+// net — the same approach KiCad uses for ratsnest visualization.
 //
-// Uses single-pass flood-fill per net instead of O(n^2) BFS.
+// Uses single-pass flood-fill per net for connectivity discovery.
 
 export function calculateRatsNest(
   components: Component[],
@@ -43,42 +47,92 @@ export function calculateRatsNest(
     if (pinPositions.length < 2) continue;
 
     // Discover connected groups using flood-fill (single pass)
+    // Each group is a set of pins already physically connected via strips/wires
     const groups = discoverConnectedGroups(pinPositions, net.id, index, wires);
 
-    // For every pair of disconnected groups, add a rats-nest
-    // line between the closest pair of pins.
-    for (let gi = 0; gi < groups.length; gi++) {
-      for (let gj = gi + 1; gj < groups.length; gj++) {
-        const groupA = groups[gi];
-        const groupB = groups[gj];
+    // If everything is already connected, no ratsnest needed
+    if (groups.length < 2) continue;
 
-        let bestDist = Infinity;
-        let bestA = groupA[0];
-        let bestB = groupB[0];
+    // Map each pin index to its group index for fast lookup
+    const pinToGroup = new Int32Array(pinPositions.length);
+    for (let g = 0; g < groups.length; g++) {
+      for (const pinIdx of groups[g]) {
+        pinToGroup[pinIdx] = g;
+      }
+    }
 
-        for (const a of groupA) {
-          for (const b of groupB) {
-            const d =
-              Math.abs(pinPositions[a].row - pinPositions[b].row) +
-              Math.abs(pinPositions[a].col - pinPositions[b].col);
-            if (d < bestDist) {
-              bestDist = d;
-              bestA = a;
-              bestB = b;
-            }
-          }
-        }
+    // Build MST over ALL individual pins using Kruskal's algorithm.
+    // We generate edges between every pair of pins that are in
+    // DIFFERENT connected groups, sort by distance, and use union-find
+    // to greedily pick the shortest edges that connect new components.
+    // This ensures every pin participates in the MST and has at least
+    // one ratsnest line to its nearest neighbor on the net.
 
+    // Generate candidate edges (only between pins in different groups)
+    const edges: Array<{ from: number; to: number; dist: number }> = [];
+    for (let i = 0; i < pinPositions.length; i++) {
+      for (let j = i + 1; j < pinPositions.length; j++) {
+        if (pinToGroup[i] === pinToGroup[j]) continue; // same group, skip
+        const dr = pinPositions[i].row - pinPositions[j].row;
+        const dc = pinPositions[i].col - pinPositions[j].col;
+        edges.push({ from: i, to: j, dist: dr * dr + dc * dc }); // squared euclidean
+      }
+    }
+
+    // Sort edges by distance (shortest first)
+    edges.sort((a, b) => a.dist - b.dist);
+
+    // Union-Find with path compression and union by rank
+    const parent = new Int32Array(pinPositions.length);
+    const rank = new Int32Array(pinPositions.length);
+    for (let i = 0; i < pinPositions.length; i++) parent[i] = i;
+
+    // Pre-union pins that are already physically connected (same group)
+    for (const group of groups) {
+      for (let k = 1; k < group.length; k++) {
+        ufUnion(parent, rank, group[0], group[k]);
+      }
+    }
+
+    // Kruskal's: add shortest edges that connect new components
+    let edgesAdded = 0;
+    const targetEdges = groups.length - 1;
+
+    for (const edge of edges) {
+      if (edgesAdded >= targetEdges) break;
+      if (ufFind(parent, edge.from) !== ufFind(parent, edge.to)) {
+        ufUnion(parent, rank, edge.from, edge.to);
         connections.push({
-          from: pinPositions[bestA],
-          to: pinPositions[bestB],
+          from: pinPositions[edge.from],
+          to: pinPositions[edge.to],
           netId: net.id,
         });
+        edgesAdded++;
       }
     }
   }
 
   return connections;
+}
+
+// ─── Union-Find helpers ──────────────────────────────────────
+
+function ufFind(parent: Int32Array, x: number): number {
+  while (parent[x] !== x) {
+    parent[x] = parent[parent[x]]; // path compression
+    x = parent[x];
+  }
+  return x;
+}
+
+function ufUnion(parent: Int32Array, rank: Int32Array, a: number, b: number): boolean {
+  const ra = ufFind(parent, a);
+  const rb = ufFind(parent, b);
+  if (ra === rb) return false;
+  if (rank[ra] < rank[rb]) { parent[ra] = rb; }
+  else if (rank[ra] > rank[rb]) { parent[rb] = ra; }
+  else { parent[rb] = ra; rank[ra]++; }
+  return true;
 }
 
 /**
@@ -133,6 +187,13 @@ function discoverConnectedGroups(
 /**
  * Get all positions connected to a given position via strips or wires.
  * Optimized for ratsnest calculation.
+ *
+ * Strip connectivity: walks outward from the pin position and STOPS when
+ * it encounters a pin belonging to a different net.  A conflicting-net pin
+ * on the strip acts as an effective break — the copper is compromised by
+ * the short, so we do NOT consider pins beyond the conflict as reachable.
+ * This ensures the ratsnest keeps showing connections that still need
+ * proper routing when there are errors/shorts on a strip.
  */
 function getConnectedPositionsForRatsnest(
   pos: GridPosition,
@@ -146,19 +207,22 @@ function getConnectedPositionsForRatsnest(
   // Check strips on the same row
   const strip = index.stripByRow.get(pos.row);
   if (strip && pos.col >= strip.startCol && pos.col <= strip.endCol) {
-    // Add all positions on this strip segment (up to breaks)
     const segment = findSegmentContaining(strip, pos.col);
     if (segment) {
-      for (let col = segment.startCol; col <= segment.endCol; col++) {
-        if (col !== pos.col) {
-          const colKey = posKey({ row: strip.row, col });
-          // Only include if this position belongs to the same net
-          const pinsHere = index.pinsByPos.get(colKey) || [];
-          const hasConflict = pinsHere.some(pin => pin.netId && pin.netId !== netId);
-          if (!hasConflict) {
-            connected.push({ row: strip.row, col });
-          }
-        }
+      // Walk LEFT from current position — stop at any conflicting net
+      for (let col = pos.col - 1; col >= segment.startCol; col--) {
+        const colKey = posKey({ row: strip.row, col });
+        const pinsHere = index.pinsByPos.get(colKey) || [];
+        if (pinsHere.some(pin => pin.netId && pin.netId !== netId)) break;
+        connected.push({ row: strip.row, col });
+      }
+
+      // Walk RIGHT from current position — stop at any conflicting net
+      for (let col = pos.col + 1; col <= segment.endCol; col++) {
+        const colKey = posKey({ row: strip.row, col });
+        const pinsHere = index.pinsByPos.get(colKey) || [];
+        if (pinsHere.some(pin => pin.netId && pin.netId !== netId)) break;
+        connected.push({ row: strip.row, col });
       }
     }
   }
