@@ -300,34 +300,58 @@ function ComponentsCategory() {
     selectItem,
   } = useStripboardStore();
   const [isExpanded, setIsExpanded] = useState(false);
+  const preSelectionExpandedState = useRef<boolean | null>(null);
 
   const selectedComponentIds = useMemo(() => {
     const compIds = new Set(components.map((c) => c.id));
     return selectedItems.filter((id) => compIds.has(id));
   }, [components, selectedItems]);
 
-  // Filter components based on search
+  // Filter components based on search AND selection (isolation mode)
   const filteredComponents = useMemo(() => {
-    if (!componentSearchFilter.trim()) return components;
-    const lower = componentSearchFilter.toLowerCase();
-    return components.filter((c) => {
-      const def = componentDefinitions.find((d) => d.id === c.definitionId);
-      return (
-        c.reference.toLowerCase().includes(lower) ||
-        (c.value || '').toLowerCase().includes(lower) ||
-        (def?.name || '').toLowerCase().includes(lower)
-      );
-    });
-  }, [components, componentSearchFilter, componentDefinitions]);
+    let filtered = components;
+    
+    // If components are selected on canvas, show only those (isolation mode)
+    if (selectedComponentIds.length > 0) {
+      filtered = components.filter((c) => selectedComponentIds.includes(c.id));
+    }
+    
+    // Then apply search filter on top
+    if (componentSearchFilter.trim()) {
+      const lower = componentSearchFilter.toLowerCase();
+      filtered = filtered.filter((c) => {
+        const def = componentDefinitions.find((d) => d.id === c.definitionId);
+        return (
+          c.reference.toLowerCase().includes(lower) ||
+          (c.value || '').toLowerCase().includes(lower) ||
+          (def?.name || '').toLowerCase().includes(lower)
+        );
+      });
+    }
+    
+    return filtered;
+  }, [components, componentSearchFilter, componentDefinitions, selectedComponentIds]);
 
-  // Auto-expand when components are selected
+  // Auto-expand when components are selected, restore original state when deselected
   const prevSelectedCount = useRef(0);
   useEffect(() => {
-    if (selectedComponentIds.length > 0 && prevSelectedCount.current === 0) {
+    const hadSelection = prevSelectedCount.current > 0;
+    const hasSelection = selectedComponentIds.length > 0;
+    
+    if (hasSelection && !hadSelection) {
+      // Going from no selection to some selection: save current state and expand
+      preSelectionExpandedState.current = isExpanded;
       setIsExpanded(true);
+    } else if (!hasSelection && hadSelection) {
+      // Going from selection to no selection: restore original state
+      if (preSelectionExpandedState.current !== null) {
+        setIsExpanded(preSelectionExpandedState.current);
+        preSelectionExpandedState.current = null;
+      }
     }
+    
     prevSelectedCount.current = selectedComponentIds.length;
-  }, [selectedComponentIds.length]);
+  }, [selectedComponentIds.length, isExpanded]);
 
   if (components.length === 0) return null;
 
