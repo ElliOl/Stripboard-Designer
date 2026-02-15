@@ -4,6 +4,7 @@ import { Toolbar } from '@/components/Toolbar/Toolbar';
 import { ZoomIsland } from '@/components/Toolbar/ZoomIsland';
 import { FpsOverlay } from '@/components/Debug/FpsOverlay';
 import { useStripboardStore } from '@/store/stripboard';
+import { processFileToReferenceImage } from '@/lib/image-import';
 import '@/styles/globals.css';
 
 // Lazy load the sidebar for better initial load performance
@@ -103,6 +104,47 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setActiveTool, undo, redo, removeSelected, deselectAll, rotateComponent, selectedItems, toggleRatsNest]);
+
+  // ─── Clipboard Paste → Reference Image ──────────────────────
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      // Don't intercept paste inside inputs/textareas
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      )
+        return;
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      // Look for an image blob in the clipboard
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (!file) continue;
+
+          try {
+            const { rows, cols, setReferenceImage } =
+              useStripboardStore.getState();
+            const refImage = await processFileToReferenceImage(
+              file,
+              rows,
+              cols,
+            );
+            setReferenceImage(refImage);
+          } catch (err) {
+            console.error('Failed to paste reference image:', err);
+          }
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
 
   // Check for ?perf query parameter
   const showPerf = new URLSearchParams(window.location.search).has('perf');

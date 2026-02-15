@@ -17,6 +17,7 @@ import type {
   LayerVisibility,
   NetHighlightMode,
   RatsnestColorMode,
+  ReferenceImageState,
 } from '@/lib/types';
 import { getRotatedPinPositions } from '@/lib/rotation';
 import {
@@ -173,6 +174,11 @@ interface StripboardStore extends StripboardState {
   loadComponentDefinitions: (definitions: ComponentDefinition[]) => void;
   addComponentDefinition: (definition: ComponentDefinition) => void;
 
+  // Reference Image
+  setReferenceImage: (image: ReferenceImageState | null) => void;
+  updateReferenceImage: (updates: Partial<ReferenceImageState>) => void;
+  clearReferenceImage: () => void;
+
   // Board
   setBoardSize: (rows: number, cols: number) => void;
 
@@ -218,6 +224,7 @@ const initialState: StripboardState = {
   selectedNetIds: [],
   netSearchFilter: '',
   componentSearchFilter: '',
+  referenceImage: null,
 };
 
 export const useStripboardStore = create<StripboardStore>((set, get) => ({
@@ -584,6 +591,9 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       .filter((m): m is RegExpMatchArray => m !== null)
       .map((m) => ({ row: +m[1], col: +m[2] }));
 
+    // Check if reference image is being deleted
+    const clearRefImage = state.selectedItems.includes('ref-image');
+
     set((s) => ({
       components: s.components.filter((c) => !s.selectedItems.includes(c.id)),
       wires: s.wires.filter((w) => !s.selectedItems.includes(w.id)),
@@ -601,6 +611,8 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
               };
             })
           : s.strips,
+      // Clear reference image if it was selected for deletion
+      referenceImage: clearRefImage ? null : s.referenceImage,
       selectedItems: [],
     }));
   },
@@ -735,6 +747,18 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       },
       ...(layer === 'ratsNest' ? { showRatsNest: visible } : {}),
     })),
+
+  // ─── Reference Image ────────────────────────────────────
+  setReferenceImage: (image) => set({ referenceImage: image }),
+
+  updateReferenceImage: (updates) =>
+    set((state) => ({
+      referenceImage: state.referenceImage
+        ? { ...state.referenceImage, ...updates }
+        : null,
+    })),
+
+  clearReferenceImage: () => set({ referenceImage: null }),
 
   // ─── Library ──────────────────────────────────────────────
   loadComponentDefinitions: (definitions) =>

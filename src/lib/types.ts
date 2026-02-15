@@ -161,6 +161,18 @@ export type ProjectData = {
 export type NetHighlightMode = 'full' | 'connections';
 export type RatsnestColorMode = 'colored' | 'white';
 
+export type ReferenceImageState = {
+  src: string; // data URL of the imported image
+  x: number; // canvas x position (Konva pixels)
+  y: number; // canvas y position (Konva pixels)
+  naturalWidth: number; // original image width
+  naturalHeight: number; // original image height
+  scale: number; // proportional scale factor (1 = original size)
+  inverted: boolean; // invert colours (for dark-background use)
+  onTop: boolean; // if true, render above all PCB layers
+  visible: boolean;
+};
+
 export type StripboardState = {
   // Board configuration
   rows: number;
@@ -213,4 +225,7 @@ export type StripboardState = {
 
   // Netlist import report (null when no import has been done)
   importReport: ImportReport | null;
+
+  // Reference image (null when none imported)
+  referenceImage: ReferenceImageState | null;
 };

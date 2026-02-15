@@ -6,6 +6,7 @@ import { Grid } from './Grid';
 import { Strip } from './Strip';
 import { Component } from './Component';
 import { Wire } from './Wire';
+import { ReferenceImage, REF_IMAGE_ID } from './ReferenceImage';
 import {
   ComponentContextMenu,
   type ContextMenuState,
@@ -58,6 +59,9 @@ type InteractionState =
       type: 'dragging';
       lastGridRow: number;
       lastGridCol: number;
+      /** Pixel-level tracking for free-drag items (reference image) */
+      lastContentX: number;
+      lastContentY: number;
     }
   | {
       type: 'panning';
@@ -78,6 +82,7 @@ function getItemIdFromTarget(target: any): string | null {
     if (name.startsWith('component:')) return name.slice('component:'.length);
     if (name.startsWith('wire:')) return name.slice('wire:'.length);
     if (name.startsWith('cut:')) return name.slice('cut:'.length);
+    if (name.startsWith('refimage:')) return name.slice('refimage:'.length);
     node = node.parent;
   }
   return null;
@@ -104,6 +109,7 @@ export const StripboardCanvas = () => {
   const componentDefinitions = useStripboardStore((s) => s.componentDefinitions);
   const realtimeRatsnest = useStripboardStore((s) => s.realtimeRatsnest);
   const componentSearchFilter = useStripboardStore((s) => s.componentSearchFilter);
+  const referenceImage = useStripboardStore((s) => s.referenceImage);
   
   // Actions
   const setZoom = useStripboardStore((s) => s.setZoom);
@@ -119,6 +125,7 @@ export const StripboardCanvas = () => {
   const saveToHistory = useStripboardStore((s) => s.saveToHistory);
   const rotateComponent = useStripboardStore((s) => s.rotateComponent);
   const removeComponent = useStripboardStore((s) => s.removeComponent);
+  const updateReferenceImage = useStripboardStore((s) => s.updateReferenceImage);
 
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -371,6 +378,19 @@ export const StripboardCanvas = () => {
         }
       }
 
+      // Check reference image — all four corners must be inside the box
+      const ref = useStripboardStore.getState().referenceImage;
+      if (ref && ref.visible) {
+        const rw = ref.naturalWidth * ref.scale;
+        const rh = ref.naturalHeight * ref.scale;
+        if (
+          ref.x >= minX && ref.x + rw <= maxX &&
+          ref.y >= minY && ref.y + rh <= maxY
+        ) {
+          ids.push(REF_IMAGE_ID);
+        }
+      }
+
       return ids;
     },
     [components, wires, strips]
@@ -612,6 +632,8 @@ export const StripboardCanvas = () => {
           type: 'dragging',
           lastGridRow: startGrid.row,
           lastGridCol: startGrid.col,
+          lastContentX: interaction.startContentX,
+          lastContentY: interaction.startContentY,
         };
       }
       return;
@@ -631,16 +653,35 @@ export const StripboardCanvas = () => {
     // ── Active MULTI-DRAG → move selected items by grid delta
     if (interaction.type === 'dragging') {
       const content = pointerToContent(pointer.x, pointer.y);
-      const newGridRow = Math.round(content.y / GRID_PITCH);
-      const newGridCol = Math.round(content.x / GRID_PITCH);
+      const currentSelected = useStripboardStore.getState().selectedItems;
+      const isRefImageOnly =
+        currentSelected.length === 1 && currentSelected[0] === REF_IMAGE_ID;
 
-      const deltaRow = newGridRow - interaction.lastGridRow;
-      const deltaCol = newGridCol - interaction.lastGridCol;
+      if (isRefImageOnly) {
+        // Reference image: pixel-level free-drag (not grid-snapped)
+        const dx = content.x - interaction.lastContentX;
+        const dy = content.y - interaction.lastContentY;
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+          const ref = useStripboardStore.getState().referenceImage;
+          if (ref) {
+            updateReferenceImage({ x: ref.x + dx, y: ref.y + dy });
+          }
+          interaction.lastContentX = content.x;
+          interaction.lastContentY = content.y;
+        }
+      } else {
+        // Standard grid-snapped drag for components/wires/cuts
+        const newGridRow = Math.round(content.y / GRID_PITCH);
+        const newGridCol = Math.round(content.x / GRID_PITCH);
 
-      if (deltaRow !== 0 || deltaCol !== 0) {
-        moveSelectedItems(deltaRow, deltaCol);
-        interaction.lastGridRow = newGridRow;
-        interaction.lastGridCol = newGridCol;
+        const deltaRow = newGridRow - interaction.lastGridRow;
+        const deltaCol = newGridCol - interaction.lastGridCol;
+
+        if (deltaRow !== 0 || deltaCol !== 0) {
+          moveSelectedItems(deltaRow, deltaCol);
+          interaction.lastGridRow = newGridRow;
+          interaction.lastGridCol = newGridCol;
+        }
       }
       return;
     }
@@ -963,8 +1004,30 @@ export const StripboardCanvas = () => {
             ))}
         </Layer>
 
-        {/* Layer 2: Interactive content (components + wires) */}
+        {/* Layer 2: Interactive content (ref image + components + wires) */}
         <Layer>
+          {/* Reference image (below components when not on-top) */}
+          {referenceImage && referenceImage.visible && !referenceImage.onTop && (
+            <ReferenceImage
+              src={referenceImage.src}
+              x={referenceImage.x}
+              y={referenceImage.y}
+              width={referenceImage.naturalWidth * referenceImage.scale}
+              height={referenceImage.naturalHeight * referenceImage.scale}
+              inverted={referenceImage.inverted}
+              opacity={0.7}
+              isSelected={selectedItems.includes(REF_IMAGE_ID)}
+              zoom={zoom}
+              onTransformEnd={(nx, ny, scaleMul) => {
+                updateReferenceImage({
+                  x: nx,
+                  y: ny,
+                  scale: referenceImage.scale * scaleMul,
+                });
+              }}
+            />
+          )}
+
           {/* Components */}
           {layerVisibility.components &&
             visibleComponents.map((c: ComponentType) => {
@@ -1019,6 +1082,28 @@ export const StripboardCanvas = () => {
                 />
               );
             })}
+
+          {/* Reference image (on top of components+wires when on-top mode) */}
+          {referenceImage && referenceImage.visible && referenceImage.onTop && (
+            <ReferenceImage
+              src={referenceImage.src}
+              x={referenceImage.x}
+              y={referenceImage.y}
+              width={referenceImage.naturalWidth * referenceImage.scale}
+              height={referenceImage.naturalHeight * referenceImage.scale}
+              inverted={referenceImage.inverted}
+              opacity={0.35}
+              isSelected={selectedItems.includes(REF_IMAGE_ID)}
+              zoom={zoom}
+              onTransformEnd={(nx, ny, scaleMul) => {
+                updateReferenceImage({
+                  x: nx,
+                  y: ny,
+                  scale: referenceImage.scale * scaleMul,
+                });
+              }}
+            />
+          )}
         </Layer>
 
         {/* Layer 3: Overlays (ratsnest, selection box, tool cursors) */}
@@ -1142,6 +1227,7 @@ export const StripboardCanvas = () => {
             />
           )}
         </Layer>
+
       </Stage>
 
       {/* ── Component Context Menu (HTML overlay) ─────────── */}
