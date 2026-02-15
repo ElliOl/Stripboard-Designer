@@ -1,8 +1,9 @@
-import { useEffect, lazy, Suspense } from 'react';
+import { useEffect, lazy, Suspense, useState } from 'react';
 import { StripboardCanvas } from '@/components/Canvas/StripboardCanvas';
 import { Toolbar } from '@/components/Toolbar/Toolbar';
 import { ZoomIsland } from '@/components/Toolbar/ZoomIsland';
 import { FpsOverlay } from '@/components/Debug/FpsOverlay';
+import { HotkeyLegend, GhostButton } from '@/components/HotkeyLegend';
 import { useStripboardStore } from '@/store/stripboard';
 import { processFileToReferenceImage } from '@/lib/image-import';
 import '@/styles/globals.css';
@@ -25,6 +26,8 @@ function App() {
     selectedItems,
     toggleRatsNest,
   } = useStripboardStore();
+
+  const [showHotkeyLegend, setShowHotkeyLegend] = useState(false);
 
   // ─── Keyboard Shortcuts ────────────────────────────────────
   useEffect(() => {
@@ -68,6 +71,11 @@ function App() {
 
       // Escape
       if (e.key === 'Escape') {
+        // Close hotkey legend if open
+        if (showHotkeyLegend) {
+          setShowHotkeyLegend(false);
+          return;
+        }
         deselectAll();
         setActiveTool('select');
         return;
@@ -81,7 +89,10 @@ function App() {
           setActiveTool('select');
           break;
         case 'h':
-          setActiveTool('pan');
+        case '?':
+          // Toggle hotkey legend
+          e.preventDefault();
+          setShowHotkeyLegend(prev => !prev);
           break;
         case 'w':
           setActiveTool('routeWire');
@@ -103,7 +114,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setActiveTool, undo, redo, removeSelected, deselectAll, rotateComponent, selectedItems, toggleRatsNest]);
+  }, [setActiveTool, undo, redo, removeSelected, deselectAll, rotateComponent, selectedItems, toggleRatsNest, showHotkeyLegend]);
 
   // ─── Clipboard Paste → Reference Image ──────────────────────
   useEffect(() => {
@@ -159,6 +170,8 @@ function App() {
           <Sidebar />
         </Suspense>
         {showPerf && <FpsOverlay />}
+        <GhostButton onClick={() => setShowHotkeyLegend(true)} />
+        <HotkeyLegend isOpen={showHotkeyLegend} onClose={() => setShowHotkeyLegend(false)} />
       </div>
       <StatusBar />
     </div>
@@ -172,15 +185,15 @@ function StatusBar() {
 
   const toolHints: Record<string, string> = {
     select:
-      'Click select · Drag select box · Shift add · Cmd subtract · Middle/Right drag pan · R rotate',
-    pan: 'Drag to pan · Scroll to zoom · Shift+scroll pan Y · Cmd+scroll pan X',
+      'Click select · Drag select box · Shift add · Cmd subtract · Middle/Right drag pan · R rotate · H help',
+    pan: 'Drag to pan · Scroll to zoom · Shift+scroll pan Y · Cmd+scroll pan X · H help',
     routeWire:
-      'Click to place wire points · Click same point twice to finish · Esc to cancel',
+      'Click to place wire points · Click same point twice to finish · Esc to cancel · H help',
     cutStrip:
-      'Click on the board to toggle a cut in the copper strip at that position',
-    placeComponent: 'Drag a component from the library panel onto the board',
-    linkStrip: 'Click to link strip segments',
-    extendLeg: 'Click a component pin to extend its leg',
+      'Click on the board to toggle a cut in the copper strip at that position · H help',
+    placeComponent: 'Drag a component from the library panel onto the board · H help',
+    linkStrip: 'Click to link strip segments · H help',
+    extendLeg: 'Click a component pin to extend its leg · H help',
   };
 
   const toolNames: Record<string, string> = {
