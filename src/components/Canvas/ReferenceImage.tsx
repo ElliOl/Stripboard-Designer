@@ -5,9 +5,10 @@ import Konva from 'konva';
 /** Stable ID used in the selection system (like component IDs). */
 export const REF_IMAGE_ID = 'ref-image';
 /** Prefix used by getItemIdFromTarget to identify reference image nodes. */
-export const REF_IMAGE_NAME = `refimage:${REF_IMAGE_ID}`;
+export const REF_IMAGE_NAME_PREFIX = 'refimage:';
 
 type ReferenceImageProps = {
+  id: string; // unique ID for this image
   src: string;
   x: number;
   y: number;
@@ -21,6 +22,7 @@ type ReferenceImageProps = {
 };
 
 export const ReferenceImage = ({
+  id,
   src,
   x,
   y,
@@ -104,7 +106,7 @@ export const ReferenceImage = ({
     <>
       <Group
         ref={groupRef}
-        name={REF_IMAGE_NAME}
+        name={`${REF_IMAGE_NAME_PREFIX}${id}`}
         x={x}
         y={y}
       >
@@ -138,14 +140,14 @@ export const ReferenceImage = ({
           'bottom-left',
           'bottom-right',
         ]}
-        // Style the handles
-        anchorSize={8 / zoom}
+        // Style the handles - fixed size in screen space (not affected by zoom)
+        anchorSize={8}
         anchorStroke="#c8ff2e"
         anchorFill="#0e0e12"
-        anchorCornerRadius={2 / zoom}
+        anchorCornerRadius={2}
         borderStroke="#c8ff2e"
-        borderStrokeWidth={1.5 / zoom}
-        borderDash={[6 / zoom, 4 / zoom]}
+        borderStrokeWidth={1.5}
+        borderDash={[6, 4]}
         rotateEnabled={false}
         boundBoxFunc={(oldBox, newBox) => {
           // Prevent flipping / zero-size

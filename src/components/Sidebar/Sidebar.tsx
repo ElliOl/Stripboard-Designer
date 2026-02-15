@@ -10,13 +10,22 @@ export const Sidebar = () => {
   const [activeTab, setActiveTab] = useState<Tab>('library');
   const selectedItems = useStripboardStore((s) => s.selectedItems);
   const importReport = useStripboardStore((s) => s.importReport);
+  const referenceImages = useStripboardStore((s) => s.referenceImages);
 
-  // Auto-switch to inspector when something is selected
+  // Auto-switch to inspector when something is selected (but not reference images)
   useEffect(() => {
     if (selectedItems.length > 0) {
-      setActiveTab('inspector');
+      // Check if all selected items are reference images
+      const allAreReferenceImages = selectedItems.every((itemId) =>
+        referenceImages.some((img) => img.id === itemId)
+      );
+      
+      // Only auto-switch if at least one non-reference-image is selected
+      if (!allAreReferenceImages) {
+        setActiveTab('inspector');
+      }
     }
-  }, [selectedItems]);
+  }, [selectedItems, referenceImages]);
 
   // Auto-switch to inspector after a netlist import
   useEffect(() => {
@@ -24,6 +33,11 @@ export const Sidebar = () => {
       setActiveTab('inspector');
     }
   }, [importReport]);
+
+  // Calculate badge count excluding reference images
+  const nonImageSelectedCount = selectedItems.filter(
+    (itemId) => !referenceImages.some((img) => img.id === itemId)
+  ).length;
 
   return (
     <div className="w-72 h-full bg-[#111114] border-l border-[#1c1c22] flex flex-col shrink-0">
@@ -41,8 +55,8 @@ export const Sidebar = () => {
           badge={
             importReport && importReport.skippedComponents.length > 0
               ? importReport.skippedComponents.length
-              : selectedItems.length > 0
-                ? selectedItems.length
+              : nonImageSelectedCount > 0
+                ? nonImageSelectedCount
                 : undefined
           }
           badgeVariant={

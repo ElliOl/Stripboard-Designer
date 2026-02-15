@@ -111,12 +111,14 @@ export function createReferenceImage(
   const initialY = boardH + gap;
 
   return {
+    id: `ref-img-${Date.now()}-${Math.random().toString(36).substring(7)}`,
     src,
     x: initialX,
     y: initialY,
     naturalWidth,
     naturalHeight,
     scale: initialScale,
+    opacity: 1.0, // Fully opaque by default
     inverted: false,
     onTop: false,
     visible: true,

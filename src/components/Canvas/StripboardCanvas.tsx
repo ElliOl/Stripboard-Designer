@@ -6,7 +6,7 @@ import { Grid } from './Grid';
 import { Strip } from './Strip';
 import { Component } from './Component';
 import { Wire } from './Wire';
-import { ReferenceImage, REF_IMAGE_ID } from './ReferenceImage';
+import { ReferenceImage, REF_IMAGE_ID, REF_IMAGE_NAME_PREFIX } from './ReferenceImage';
 import {
   ComponentContextMenu,
   type ContextMenuState,
@@ -109,7 +109,9 @@ export const StripboardCanvas = () => {
   const componentDefinitions = useStripboardStore((s) => s.componentDefinitions);
   const realtimeRatsnest = useStripboardStore((s) => s.realtimeRatsnest);
   const componentSearchFilter = useStripboardStore((s) => s.componentSearchFilter);
+  const componentOpacity = useStripboardStore((s) => s.componentOpacity);
   const referenceImage = useStripboardStore((s) => s.referenceImage);
+  const referenceImages = useStripboardStore((s) => s.referenceImages);
   
   // Actions
   const setZoom = useStripboardStore((s) => s.setZoom);
@@ -126,6 +128,7 @@ export const StripboardCanvas = () => {
   const rotateComponent = useStripboardStore((s) => s.rotateComponent);
   const removeComponent = useStripboardStore((s) => s.removeComponent);
   const updateReferenceImage = useStripboardStore((s) => s.updateReferenceImage);
+  const updateReferenceImageById = useStripboardStore((s) => s.updateReferenceImageById);
 
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -654,18 +657,25 @@ export const StripboardCanvas = () => {
     if (interaction.type === 'dragging') {
       const content = pointerToContent(pointer.x, pointer.y);
       const currentSelected = useStripboardStore.getState().selectedItems;
-      const isRefImageOnly =
-        currentSelected.length === 1 && currentSelected[0] === REF_IMAGE_ID;
+      const currentRefImages = useStripboardStore.getState().referenceImages;
+      
+      // Check if all selected items are reference images
+      const selectedRefImages = currentSelected.filter((id) =>
+        currentRefImages.some((img) => img.id === id)
+      );
+      const allAreRefImages = selectedRefImages.length === currentSelected.length;
 
-      if (isRefImageOnly) {
-        // Reference image: pixel-level free-drag (not grid-snapped)
+      if (allAreRefImages && selectedRefImages.length > 0) {
+        // Reference image(s): pixel-level free-drag (not grid-snapped)
         const dx = content.x - interaction.lastContentX;
         const dy = content.y - interaction.lastContentY;
         if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-          const ref = useStripboardStore.getState().referenceImage;
-          if (ref) {
-            updateReferenceImage({ x: ref.x + dx, y: ref.y + dy });
-          }
+          selectedRefImages.forEach((imgId) => {
+            const img = currentRefImages.find((i) => i.id === imgId);
+            if (img) {
+              updateReferenceImageById(imgId, { x: img.x + dx, y: img.y + dy });
+            }
+          });
           interaction.lastContentX = content.x;
           interaction.lastContentY = content.y;
         }
@@ -1006,16 +1016,43 @@ export const StripboardCanvas = () => {
 
         {/* Layer 2: Interactive content (ref image + components + wires) */}
         <Layer>
-          {/* Reference image (below components when not on-top) */}
+          {/* Reference images (below components when not on-top) */}
+          {referenceImages
+            .filter((img) => img.visible && !img.onTop)
+            .map((img) => (
+              <ReferenceImage
+                key={img.id}
+                id={img.id}
+                src={img.src}
+                x={img.x}
+                y={img.y}
+                width={img.naturalWidth * img.scale}
+                height={img.naturalHeight * img.scale}
+                inverted={img.inverted}
+                opacity={img.opacity}
+                isSelected={selectedItems.includes(img.id)}
+                zoom={zoom}
+                onTransformEnd={(nx, ny, scaleMul) => {
+                  updateReferenceImageById(img.id, {
+                    x: nx,
+                    y: ny,
+                    scale: img.scale * scaleMul,
+                  });
+                }}
+              />
+            ))}
+
+          {/* Legacy single reference image support (below components when not on-top) */}
           {referenceImage && referenceImage.visible && !referenceImage.onTop && (
             <ReferenceImage
+              id={REF_IMAGE_ID}
               src={referenceImage.src}
               x={referenceImage.x}
               y={referenceImage.y}
               width={referenceImage.naturalWidth * referenceImage.scale}
               height={referenceImage.naturalHeight * referenceImage.scale}
               inverted={referenceImage.inverted}
-              opacity={0.7}
+              opacity={referenceImage.opacity || 1.0}
               isSelected={selectedItems.includes(REF_IMAGE_ID)}
               zoom={zoom}
               onTransformEnd={(nx, ny, scaleMul) => {
@@ -1050,6 +1087,7 @@ export const StripboardCanvas = () => {
                   hlNetColor={hlNetColor}
                   connectedGroups={connectivity.connectedGroups}
                   zoom={zoom}
+                  opacity={componentOpacity}
                 />
               );
             })}
@@ -1083,16 +1121,43 @@ export const StripboardCanvas = () => {
               );
             })}
 
-          {/* Reference image (on top of components+wires when on-top mode) */}
+          {/* Reference images (on top of components+wires when on-top mode) */}
+          {referenceImages
+            .filter((img) => img.visible && img.onTop)
+            .map((img) => (
+              <ReferenceImage
+                key={img.id}
+                id={img.id}
+                src={img.src}
+                x={img.x}
+                y={img.y}
+                width={img.naturalWidth * img.scale}
+                height={img.naturalHeight * img.scale}
+                inverted={img.inverted}
+                opacity={img.opacity}
+                isSelected={selectedItems.includes(img.id)}
+                zoom={zoom}
+                onTransformEnd={(nx, ny, scaleMul) => {
+                  updateReferenceImageById(img.id, {
+                    x: nx,
+                    y: ny,
+                    scale: img.scale * scaleMul,
+                  });
+                }}
+              />
+            ))}
+
+          {/* Legacy single reference image support (on top of components+wires when on-top mode) */}
           {referenceImage && referenceImage.visible && referenceImage.onTop && (
             <ReferenceImage
+              id={REF_IMAGE_ID}
               src={referenceImage.src}
               x={referenceImage.x}
               y={referenceImage.y}
               width={referenceImage.naturalWidth * referenceImage.scale}
               height={referenceImage.naturalHeight * referenceImage.scale}
               inverted={referenceImage.inverted}
-              opacity={0.35}
+              opacity={referenceImage.opacity || 1.0}
               isSelected={selectedItems.includes(REF_IMAGE_ID)}
               zoom={zoom}
               onTransformEnd={(nx, ny, scaleMul) => {

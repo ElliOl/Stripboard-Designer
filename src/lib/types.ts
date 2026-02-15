@@ -162,12 +162,14 @@ export type NetHighlightMode = 'full' | 'connections';
 export type RatsnestColorMode = 'colored' | 'white';
 
 export type ReferenceImageState = {
+  id: string; // unique identifier for each image
   src: string; // data URL of the imported image
   x: number; // canvas x position (Konva pixels)
   y: number; // canvas y position (Konva pixels)
   naturalWidth: number; // original image width
   naturalHeight: number; // original image height
   scale: number; // proportional scale factor (1 = original size)
+  opacity: number; // transparency (0 = fully transparent, 1 = fully opaque)
   inverted: boolean; // invert colours (for dark-background use)
   onTop: boolean; // if true, render above all PCB layers
   visible: boolean;
@@ -212,6 +214,9 @@ export type StripboardState = {
   stripColor: string; // Color of copper strips
   netHighlightMode: NetHighlightMode; // How nets are highlighted on strips
   ratsnestColorMode: RatsnestColorMode; // Color mode for ratsnest lines
+  
+  // Component appearance
+  componentOpacity: number; // Opacity for all components (0 = transparent, 1 = opaque)
 
   // View state
   zoom: number;
@@ -228,4 +233,5 @@ export type StripboardState = {
 
   // Reference image (null when none imported)
   referenceImage: ReferenceImageState | null;
+  referenceImages: ReferenceImageState[];
 };

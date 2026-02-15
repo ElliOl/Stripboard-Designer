@@ -106,17 +106,21 @@ export const LayersPanel = () => {
     setNetHighlightMode, 
     ratsnestColorMode, 
     setRatsnestColorMode,
+    componentOpacity,
+    setComponentOpacity,
     rows,
     cols,
     setBoardSize,
-    referenceImage,
-    setReferenceImage,
-    updateReferenceImage,
-    clearReferenceImage,
+    referenceImages,
+    addReferenceImage,
+    updateReferenceImageById,
+    removeReferenceImage,
+    clearAllReferenceImages,
   } = useStripboardStore();
 
   const [showBoardAccordion, setShowBoardAccordion] = useState(false);
   const [showRefAccordion, setShowRefAccordion] = useState(false);
+  const [showComponentAccordion, setShowComponentAccordion] = useState(false);
   const [tempRows, setTempRows] = useState(rows);
   const [tempCols, setTempCols] = useState(cols);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -149,7 +153,7 @@ export const LayersPanel = () => {
     setImporting(true);
     try {
       const refImage = await processFileToReferenceImage(file, rows, cols);
-      setReferenceImage(refImage);
+      addReferenceImage(refImage);
     } catch (err) {
       console.error('Failed to import reference image:', err);
     } finally {
@@ -165,7 +169,7 @@ export const LayersPanel = () => {
     { name: 'Silver', color: '#9ca3af' },
   ];
 
-  const refVisible = referenceImage?.visible ?? false;
+  const anyRefImageVisible = referenceImages.some((img) => img.visible);
 
   return (
     <div className="flex flex-col h-full">
@@ -189,7 +193,7 @@ export const LayersPanel = () => {
           </span>
         </div>
 
-        {/* ── Reference Image Layer Row ── */}
+        {/* ── Reference Images Layer Row ── */}
         <div>
           <button
             onClick={() => setShowRefAccordion(!showRefAccordion)}
@@ -197,7 +201,7 @@ export const LayersPanel = () => {
               w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md
               transition-all group text-left
               ${
-                refVisible
+                anyRefImageVisible
                   ? 'bg-[#19191d] hover:bg-[#1e1e24]'
                   : 'bg-transparent hover:bg-[#141418] opacity-50'
               }
@@ -206,7 +210,7 @@ export const LayersPanel = () => {
             {/* Icon */}
             <div
               className="shrink-0 flex items-center justify-center w-5 h-5 rounded"
-              style={{ color: refVisible ? '#64748b' : '#38384a' }}
+              style={{ color: anyRefImageVisible ? '#64748b' : '#38384a' }}
             >
               <ImageIcon size={14} />
             </div>
@@ -215,37 +219,22 @@ export const LayersPanel = () => {
             <div className="flex-1 min-w-0">
               <div
                 className={`text-[11px] font-medium leading-tight ${
-                  refVisible ? 'text-[#ededf0]' : 'text-[#52525b]'
+                  anyRefImageVisible ? 'text-[#ededf0]' : 'text-[#52525b]'
                 }`}
               >
-                Reference Image
+                Reference Images
               </div>
               <div className="text-[9px] text-[#38384a] leading-tight truncate">
-                {referenceImage ? 'KiCAD schematic overlay' : 'Import or paste (Ctrl+V)'}
+                {referenceImages.length === 0 
+                  ? 'Import or paste (Ctrl+V)' 
+                  : `${referenceImages.length} image${referenceImages.length > 1 ? 's' : ''}`}
               </div>
             </div>
-
-            {/* Visibility toggle */}
-            {referenceImage && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  updateReferenceImage({ visible: !refVisible });
-                }}
-                className={`shrink-0 transition-colors p-0.5 rounded hover:bg-[#1c1c22] ${
-                  refVisible
-                    ? 'text-[#63637a] group-hover:text-[#a6a6b8]'
-                    : 'text-[#2c2c36] group-hover:text-[#52525b]'
-                }`}
-              >
-                {refVisible ? <Eye size={13} /> : <EyeOff size={13} />}
-              </button>
-            )}
 
             {/* Accordion chevron */}
             <div
               className={`shrink-0 transition-colors ${
-                refVisible
+                anyRefImageVisible
                   ? 'text-[#63637a] group-hover:text-[#a6a6b8]'
                   : 'text-[#2c2c36] group-hover:text-[#52525b]'
               }`}
@@ -257,9 +246,9 @@ export const LayersPanel = () => {
             </div>
           </button>
 
-          {/* ── Reference Image Accordion ── */}
+          {/* ── Reference Images Accordion ── */}
           {showRefAccordion && (
-            <div className="px-2.5 py-2 bg-[#141418] rounded-md mt-1 mb-1">
+            <div className="px-2.5 py-2 bg-[#141418] rounded-md mt-1 mb-1 space-y-2">
               {/* Hidden file input (images + PDF) */}
               <input
                 ref={fileInputRef}
@@ -269,39 +258,62 @@ export const LayersPanel = () => {
                 onChange={handleImportImage}
               />
 
-              {!referenceImage ? (
-                /* No image loaded – show import button */
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={importing}
-                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md
-                    bg-[#1c1c22] hover:bg-[#222228] border border-[#2c2c36] hover:border-[#3c3c4a]
-                    text-[10px] text-[#a6a6b8] transition-all disabled:opacity-50 disabled:cursor-wait"
-                >
-                  <Upload size={12} />
-                  {importing ? 'Importing...' : 'Import Image / PDF'}
-                </button>
-              ) : (
-                /* Image loaded – show controls */
-                <div className="space-y-2.5">
-                  {/* Scale slider */}
+              {/* Add New Image Button */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md
+                  bg-[#1c1c22] hover:bg-[#222228] border border-[#2c2c36] hover:border-[#3c3c4a]
+                  text-[10px] text-[#a6a6b8] transition-all disabled:opacity-50 disabled:cursor-wait"
+              >
+                <Upload size={12} />
+                {importing ? 'Importing...' : 'Add Image / PDF'}
+              </button>
+
+              {/* List of Reference Images */}
+              {referenceImages.map((img, index) => (
+                <div key={img.id} className="border border-[#1c1c22] rounded-md p-2 space-y-2">
+                  {/* Image header */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-semibold text-[#a6a6b8]">
+                      Image {index + 1}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => updateReferenceImageById(img.id, { visible: !img.visible })}
+                        className="p-0.5 rounded hover:bg-[#1c1c22] text-[#63637a] hover:text-[#a6a6b8] transition-colors"
+                        title={img.visible ? 'Hide image' : 'Show image'}
+                      >
+                        {img.visible ? <Eye size={12} /> : <EyeOff size={12} />}
+                      </button>
+                      <button
+                        onClick={() => removeReferenceImage(img.id)}
+                        className="p-0.5 rounded hover:bg-[#2a1515] text-[#ef4444]/70 hover:text-[#ef4444] transition-colors"
+                        title="Remove image"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Opacity slider (was scale slider) */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-[10px] font-semibold text-[#63637a] uppercase tracking-wider">
-                        Scale
+                        Opacity
                       </label>
                       <span className="text-[10px] text-[#a6a6b8] tabular-nums">
-                        {Math.round(referenceImage.scale * 100)}%
+                        {Math.round(img.opacity * 100)}%
                       </span>
                     </div>
                     <input
                       type="range"
-                      min="0.05"
-                      max="5"
+                      min="0"
+                      max="1"
                       step="0.01"
-                      value={referenceImage.scale}
+                      value={img.opacity}
                       onChange={(e) =>
-                        updateReferenceImage({ scale: parseFloat(e.target.value) })
+                        updateReferenceImageById(img.id, { opacity: parseFloat(e.target.value) })
                       }
                       className="w-full h-1 bg-[#2c2c36] rounded-lg appearance-none cursor-pointer
                         [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3
@@ -311,30 +323,27 @@ export const LayersPanel = () => {
                     />
                   </div>
 
-                  {/* Divider */}
-                  <div className="border-t border-[#1c1c22]" />
-
                   {/* Invert toggle */}
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-[#a6a6b8]">Invert Colors</span>
                     <button
                       onClick={() =>
-                        updateReferenceImage({ inverted: !referenceImage.inverted })
+                        updateReferenceImageById(img.id, { inverted: !img.inverted })
                       }
                       className={`
                         shrink-0 w-4 h-4 rounded-full transition-all flex items-center justify-center
                         ${
-                          referenceImage.inverted
+                          img.inverted
                             ? 'ring-1 ring-[#c8ff2e] ring-offset-1 ring-offset-[#0e0e12]'
                             : 'ring-1 ring-[#38384a]'
                         }
                       `}
                       style={{
-                        backgroundColor: referenceImage.inverted ? '#c8ff2e' : 'transparent',
+                        backgroundColor: img.inverted ? '#c8ff2e' : 'transparent',
                       }}
-                      title={referenceImage.inverted ? 'Disable invert' : 'Enable invert'}
+                      title={img.inverted ? 'Disable invert' : 'Enable invert'}
                     >
-                      {referenceImage.inverted && (
+                      {img.inverted && (
                         <div className="w-1.5 h-1.5 rounded-full bg-[#0e0e12]" />
                       )}
                     </button>
@@ -345,59 +354,50 @@ export const LayersPanel = () => {
                     <span className="text-[10px] text-[#a6a6b8]">Show On Top</span>
                     <button
                       onClick={() =>
-                        updateReferenceImage({ onTop: !referenceImage.onTop })
+                        updateReferenceImageById(img.id, { onTop: !img.onTop })
                       }
                       className={`
                         shrink-0 w-4 h-4 rounded-full transition-all flex items-center justify-center
                         ${
-                          referenceImage.onTop
+                          img.onTop
                             ? 'ring-1 ring-[#c8ff2e] ring-offset-1 ring-offset-[#0e0e12]'
                             : 'ring-1 ring-[#38384a]'
                         }
                       `}
                       style={{
-                        backgroundColor: referenceImage.onTop ? '#c8ff2e' : 'transparent',
+                        backgroundColor: img.onTop ? '#c8ff2e' : 'transparent',
                       }}
                       title={
-                        referenceImage.onTop
+                        img.onTop
                           ? 'Move below PCB layers'
                           : 'Show above all layers'
                       }
                     >
-                      {referenceImage.onTop && (
+                      {img.onTop && (
                         <div className="w-1.5 h-1.5 rounded-full bg-[#0e0e12]" />
                       )}
                     </button>
                   </div>
-
-                  {/* Divider */}
-                  <div className="border-t border-[#1c1c22]" />
-
-                  {/* Replace / Clear row */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded
-                        bg-[#1c1c22] hover:bg-[#222228] border border-[#2c2c36] hover:border-[#3c3c4a]
-                        text-[10px] text-[#a6a6b8] transition-all"
-                    >
-                      <Upload size={10} />
-                      Replace
-                    </button>
-                    <button
-                      onClick={() => {
-                        clearReferenceImage();
-                        setShowRefAccordion(false);
-                      }}
-                      className="flex items-center justify-center gap-1 px-2 py-1.5 rounded
-                        bg-[#1c1c22] hover:bg-[#2a1515] border border-[#2c2c36] hover:border-[#ef4444]/30
-                        text-[10px] text-[#ef4444]/70 hover:text-[#ef4444] transition-all"
-                    >
-                      <Trash2 size={10} />
-                      Clear
-                    </button>
-                  </div>
                 </div>
+              ))}
+
+              {/* Clear All button (only show if there are images) */}
+              {referenceImages.length > 0 && (
+                <>
+                  <div className="border-t border-[#1c1c22]" />
+                  <button
+                    onClick={() => {
+                      clearAllReferenceImages();
+                      setShowRefAccordion(false);
+                    }}
+                    className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded
+                      bg-[#1c1c22] hover:bg-[#2a1515] border border-[#2c2c36] hover:border-[#ef4444]/30
+                      text-[10px] text-[#ef4444]/70 hover:text-[#ef4444] transition-all"
+                  >
+                    <Trash2 size={10} />
+                    Clear All
+                  </button>
+                </>
               )}
             </div>
           )}
@@ -418,12 +418,15 @@ export const LayersPanel = () => {
             const isNetsLayer = layer.key === 'nets';
             const isRatsNestLayer = layer.key === 'ratsNest';
             const isBoardLayer = layer.key === 'board';
+            const isComponentsLayer = layer.key === 'components';
             return (
               <div key={layer.key}>
                 <button
                   onClick={() => {
                     if (isBoardLayer) {
                       setShowBoardAccordion(!showBoardAccordion);
+                    } else if (isComponentsLayer) {
+                      setShowComponentAccordion(!showComponentAccordion);
                     } else {
                       toggleLayer(layer.key);
                     }
@@ -558,8 +561,39 @@ export const LayersPanel = () => {
                     </>
                   )}
 
-                  {/* Standard visibility icon for non-board layers */}
-                  {!isBoardLayer && (
+                  {/* Components layer: eye toggle + accordion chevron */}
+                  {isComponentsLayer && (
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleLayer('components');
+                        }}
+                        className={`shrink-0 transition-colors p-0.5 rounded hover:bg-[#1c1c22] ${
+                          isOn
+                            ? 'text-[#63637a] group-hover:text-[#a6a6b8]'
+                            : 'text-[#2c2c36] group-hover:text-[#52525b]'
+                        }`}
+                      >
+                        {isOn ? <Eye size={13} /> : <EyeOff size={13} />}
+                      </button>
+                      <div
+                        className={`shrink-0 transition-colors ${
+                          isOn
+                            ? 'text-[#63637a] group-hover:text-[#a6a6b8]'
+                            : 'text-[#2c2c36] group-hover:text-[#52525b]'
+                        }`}
+                      >
+                        <ChevronDown
+                          size={13}
+                          className={`transition-transform ${showComponentAccordion ? 'rotate-180' : ''}`}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Standard visibility icon for non-accordion layers */}
+                  {!isBoardLayer && !isComponentsLayer && (
                     <div
                       className={`shrink-0 transition-colors ${
                         isOn
@@ -571,6 +605,38 @@ export const LayersPanel = () => {
                     </div>
                   )}
                 </button>
+
+                {/* Components opacity accordion */}
+                {isComponentsLayer && showComponentAccordion && (
+                  <div className="px-2.5 py-2 bg-[#141418] rounded-md mt-1 mb-1">
+                    <div className="text-[10px] font-semibold text-[#63637a] uppercase tracking-wider mb-2">
+                      Component Opacity
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] text-[#a6a6b8]">Opacity</label>
+                          <span className="text-[10px] text-[#a6a6b8] tabular-nums">
+                            {Math.round(componentOpacity * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={componentOpacity}
+                          onChange={(e) => setComponentOpacity(parseFloat(e.target.value))}
+                          className="w-full h-1 bg-[#2c2c36] rounded-lg appearance-none cursor-pointer
+                            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3
+                            [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full
+                            [&::-webkit-slider-thumb]:bg-[#a6a6b8] [&::-webkit-slider-thumb]:hover:bg-[#c8ff2e]
+                            [&::-webkit-slider-thumb]:transition-colors"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Board size accordion */}
                 {isBoardLayer && showBoardAccordion && (

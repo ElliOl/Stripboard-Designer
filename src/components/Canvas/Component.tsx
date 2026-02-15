@@ -17,6 +17,7 @@ interface ComponentProps {
   hlNetColor?: string;
   connectedGroups?: Map<string, Array<Set<string>>>;
   zoom: number;
+  opacity?: number;
 }
 
 export const Component = memo(({
@@ -29,6 +30,7 @@ export const Component = memo(({
   hlNetColor,
   connectedGroups,
   zoom,
+  opacity = 1.0,
 }: ComponentProps) => {
   // ─── Level of Detail Thresholds ───────────────────────────────
   const showPinNumbers = zoom > 0.7;
@@ -115,13 +117,16 @@ export const Component = memo(({
 
   const hasHighlightedPin = highlightedPinNumbers.size > 0;
   const isDimmed = !!highlightedNetId && !hasHighlightedPin;
+  
+  // Calculate final opacity: use dimmed opacity if dimmed, otherwise use the component opacity
+  const finalOpacity = isDimmed ? 0.2 : opacity;
 
   return (
     <Group
       name={`component:${component.id}`}
       x={component.position.col * GP}
       y={component.position.row * GP}
-      opacity={isDimmed ? 0.2 : 1}
+      opacity={finalOpacity}
     >
       {/* ═══════════════════════════════════════════════════════
           LAYER 1 — Bodies & decorative shapes

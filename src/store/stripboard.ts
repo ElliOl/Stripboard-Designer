@@ -104,6 +104,9 @@ interface StripboardStore extends StripboardState {
   updateStrip: (id: string, updates: Partial<Strip>) => void;
   setStripColor: (color: string) => void;
   setNetHighlightMode: (mode: NetHighlightMode) => void;
+  
+  // Component appearance
+  setComponentOpacity: (opacity: number) => void;
 
   // Wires
   addWire: (wire: Wire) => void;
@@ -178,6 +181,12 @@ interface StripboardStore extends StripboardState {
   setReferenceImage: (image: ReferenceImageState | null) => void;
   updateReferenceImage: (updates: Partial<ReferenceImageState>) => void;
   clearReferenceImage: () => void;
+  
+  // Reference Images (multiple)
+  addReferenceImage: (image: ReferenceImageState) => void;
+  updateReferenceImageById: (id: string, updates: Partial<ReferenceImageState>) => void;
+  removeReferenceImage: (id: string) => void;
+  clearAllReferenceImages: () => void;
 
   // Board
   setBoardSize: (rows: number, cols: number) => void;
@@ -215,6 +224,7 @@ const initialState: StripboardState = {
   stripColor: '#4a4a4a', // Default dark grey color
   netHighlightMode: 'full', // Default to full strip highlighting
   ratsnestColorMode: 'colored', // Default to colored ratsnest lines
+  componentOpacity: 1.0, // Default to fully opaque components
   zoom: 1,
   pan: { x: 60, y: 60 },
   performanceMode: 'auto', // Auto-detect and adapt to device performance
@@ -225,6 +235,7 @@ const initialState: StripboardState = {
   netSearchFilter: '',
   componentSearchFilter: '',
   referenceImage: null,
+  referenceImages: [],
 };
 
 export const useStripboardStore = create<StripboardStore>((set, get) => ({
@@ -376,6 +387,8 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
   setStripColor: (color) => set({ stripColor: color }),
 
   setNetHighlightMode: (mode) => set({ netHighlightMode: mode }),
+  
+  setComponentOpacity: (opacity) => set({ componentOpacity: opacity }),
 
   // ─── Wires ────────────────────────────────────────────────
   addWire: (wire) =>
@@ -748,7 +761,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       ...(layer === 'ratsNest' ? { showRatsNest: visible } : {}),
     })),
 
-  // ─── Reference Image ────────────────────────────────────
+  // ─── Reference Image (legacy single image support) ─────────
   setReferenceImage: (image) => set({ referenceImage: image }),
 
   updateReferenceImage: (updates) =>
@@ -759,6 +772,33 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
     })),
 
   clearReferenceImage: () => set({ referenceImage: null }),
+
+  // ─── Reference Images (multiple images support) ────────────
+  addReferenceImage: (image) =>
+    set((state) => ({
+      referenceImages: [...state.referenceImages, image],
+    })),
+
+  updateReferenceImageById: (id, updates) =>
+    set((state) => ({
+      referenceImages: state.referenceImages.map((img) =>
+        img.id === id ? { ...img, ...updates } : img
+      ),
+    })),
+
+  removeReferenceImage: (id) =>
+    set((state) => ({
+      referenceImages: state.referenceImages.filter((img) => img.id !== id),
+      selectedItems: state.selectedItems.filter((itemId) => itemId !== id),
+    })),
+
+  clearAllReferenceImages: () =>
+    set((state) => ({
+      referenceImages: [],
+      selectedItems: state.selectedItems.filter(
+        (itemId) => !state.referenceImages.some((img) => img.id === itemId)
+      ),
+    })),
 
   // ─── Library ──────────────────────────────────────────────
   loadComponentDefinitions: (definitions) =>
