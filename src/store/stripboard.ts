@@ -1153,8 +1153,9 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
   exportProject: () => {
     const state = get();
     // Extract custom component definitions (generic/custom) that should be saved with the project
+    // Include definitions that start with 'generic-' or 'custom-', OR contain '-custom-' (variants created in edit dialog)
     const customDefinitions = state.componentDefinitions.filter(
-      (d) => d.id.startsWith('generic-') || d.id.startsWith('custom-')
+      (d) => d.id.startsWith('generic-') || d.id.startsWith('custom-') || d.id.includes('-custom-')
     );
     return {
       version: '1.0',
