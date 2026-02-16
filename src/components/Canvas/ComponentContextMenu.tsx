@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings, RotateCw, Trash2, Copy, Palette } from 'lucide-react';
+import { Settings, RotateCw, Trash2, Copy, Palette, RefreshCw } from 'lucide-react';
 
 export interface ContextMenuState {
   componentId: string;
@@ -15,8 +15,10 @@ interface ComponentContextMenuProps {
   onRotateComponent: (componentId: string) => void;
   onDeleteComponent: (componentId: string) => void;
   onDuplicateComponent: (componentId: string) => void;
+  onResetToDefault?: (componentId: string) => void;
   onChangeLedColor?: (componentId: string, color: string) => void;
   isLed?: boolean;
+  hasCustomVariant?: boolean;
 }
 
 const LED_COLOR_OPTIONS = [
@@ -35,8 +37,10 @@ export const ComponentContextMenu = ({
   onRotateComponent,
   onDeleteComponent,
   onDuplicateComponent,
+  onResetToDefault,
   onChangeLedColor,
   isLed = false,
+  hasCustomVariant = false,
 }: ComponentContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -119,6 +123,14 @@ export const ComponentContextMenu = ({
         onClose();
       },
     },
+    ...(hasCustomVariant && onResetToDefault ? [{
+      label: 'Reset to Default',
+      icon: RefreshCw,
+      action: () => {
+        onResetToDefault(state.componentId);
+        onClose();
+      },
+    }] : []),
     ...(isLed && onChangeLedColor ? [{
       label: 'LED Color',
       icon: Palette,

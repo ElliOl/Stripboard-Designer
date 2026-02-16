@@ -47,10 +47,10 @@ interface ComponentProps {
 /** Detect component sub-type from definition ID for visual differentiation. */
 function getComponentSubtype(defId: string): string {
   if (defId.includes('resistor')) return 'resistor';
-  if (defId === 'capacitor-rect') return 'capacitor-rect';
-  if (defId.includes('electrolytic') || defId === 'capacitor' || defId === 'capacitor-wide') return 'electrolytic';
+  if (defId.includes('capacitor-rect')) return 'capacitor-rect';
+  if (defId.includes('electrolytic') || defId.includes('capacitor-wide') || defId.includes('capacitor')) return 'electrolytic';
   if (defId.includes('inductor')) return 'inductor';
-  if (defId.includes('diode') || defId === 'zener-diode') return 'diode';
+  if (defId.includes('zener') || defId.includes('diode')) return 'diode';
   if (defId.includes('led-rgb')) return 'led-rgb';
   if (defId.includes('led-bicolor')) return 'led-bicolor';
   if (defId.includes('led')) return 'led';

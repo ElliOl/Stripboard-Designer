@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { Stage, Layer, Line, Circle, Group, Rect, Text } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
-import type { GridPosition, RatsNestConnection, Component as ComponentType, Wire as WireType, ComponentDefinition, Strip as StripType } from '@/lib/types';
+import type { GridPosition, RatsNestConnection, Component as ComponentType, Wire as WireType, ComponentDefinition, Strip as StripType, ComponentPin } from '@/lib/types';
 import { Grid } from './Grid';
 import { Strip } from './Strip';
 import { CutMarker } from './CutMarker';
@@ -114,8 +114,8 @@ function getPinDragLimits(def: ComponentDefinition): { minDist: number; maxDist:
   const baseId = def.id.replace(/-custom-.*$/, '');
   if (baseId.includes('resistor')) return { minDist: 1, maxDist: 8 };
   if (baseId.includes('diode') || baseId.includes('zener')) return { minDist: 1, maxDist: 8 };
-  if (baseId === 'capacitor-rect') return { minDist: 2, maxDist: 8 };
-  if (baseId.includes('electrolytic') || baseId === 'capacitor' || baseId === 'capacitor-wide') return { minDist: 1, maxDist: 8 };
+  if (baseId.includes('capacitor-rect')) return { minDist: 2, maxDist: 8 };
+  if (baseId.includes('electrolytic') || baseId.includes('capacitor-wide') || baseId.includes('capacitor')) return { minDist: 1, maxDist: 8 };
   if (baseId.includes('led-rgb') || baseId.includes('led-bicolor')) return { minDist: 1, maxDist: 4 };
   if (baseId.includes('led')) return { minDist: 1, maxDist: 8 };
   return { minDist: 1, maxDist: 8 };
@@ -1539,6 +1539,47 @@ export const StripboardCanvas = () => {
     [components, componentDefinitions, saveToHistory, addComponent]
   );
 
+  const handleResetToDefault = useCallback(
+    (id: string) => {
+      const comp = components.find((c) => c.id === id);
+      if (!comp) return;
+
+      // Find base definition by removing custom variant suffixes
+      const baseDefId = comp.definitionId
+        .replace(/-custom-.*$/, '') // Remove "-custom-..." suffix
+        .replace(/^(.*?)-custom$/, '$1'); // Remove "-custom" suffix if at end
+      
+      const baseDef = componentDefinitions.find((d) => d.id === baseDefId);
+      if (!baseDef) {
+        console.warn(`Base definition not found for ${comp.definitionId}`);
+        return;
+      }
+
+      // Rebuild component with rotated pins from the base definition
+      const rotatedPins = getRotatedPinPositions(baseDef.pins, comp.rotation);
+      const newPins: ComponentPin[] = rotatedPins.map((rotatedPos, idx) => {
+        const originalPin = comp.pins[idx];
+        return {
+          number: baseDef.pins[idx].number,
+          netId: originalPin?.netId, // Preserve net connections
+          position: {
+            row: comp.position.row + rotatedPos.row,
+            col: comp.position.col + rotatedPos.col,
+          },
+          extended: 0,
+        };
+      });
+
+      saveToHistory();
+      const { updateComponent } = useStripboardStore.getState();
+      updateComponent(id, {
+        definitionId: baseDefId,
+        pins: newPins,
+      });
+    },
+    [components, componentDefinitions, saveToHistory]
+  );
+
   // ─── Image Context Menu Actions ────────────────────────────
   const handleCropImage = useCallback((id: string) => {
     setCroppingImageId(id);
@@ -1682,7 +1723,72 @@ export const StripboardCanvas = () => {
           {layerVisibility.components &&
             backgroundComponents.map((c: ComponentType) => {
               const def = definitionMap.get(c.definitionId);
-              if (!def) return null;
+              if (!def) {
+                // Render error placeholder for broken components
+                return (
+                  <Group
+                    key={c.id}
+                    name={`component:${c.id}`}
+                    x={c.position.col * GRID_PITCH}
+                    y={c.position.row * GRID_PITCH}
+                  >
+                    {/* Error indicator box */}
+                    <Rect
+                      x={-GRID_PITCH * 0.5}
+                      y={-GRID_PITCH * 0.5}
+                      width={GRID_PITCH}
+                      height={GRID_PITCH}
+                      fill="#dc2626"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      cornerRadius={3}
+                      opacity={0.8}
+                    />
+                    {/* Error icon (X) */}
+                    <Line
+                      points={[
+                        -GRID_PITCH * 0.3, -GRID_PITCH * 0.3,
+                        GRID_PITCH * 0.3, GRID_PITCH * 0.3
+                      ]}
+                      stroke="#fff"
+                      strokeWidth={2}
+                    />
+                    <Line
+                      points={[
+                        GRID_PITCH * 0.3, -GRID_PITCH * 0.3,
+                        -GRID_PITCH * 0.3, GRID_PITCH * 0.3
+                      ]}
+                      stroke="#fff"
+                      strokeWidth={2}
+                    />
+                    {/* Reference label */}
+                    {layerVisibility.refDesignations && (
+                      <Text
+                        x={-GRID_PITCH * 0.5}
+                        y={GRID_PITCH * 0.6}
+                        width={GRID_PITCH}
+                        text={c.reference}
+                        fontSize={8}
+                        fontFamily="monospace"
+                        fill="#ef4444"
+                        align="center"
+                        fontStyle="bold"
+                      />
+                    )}
+                    {/* "Broken" label */}
+                    <Text
+                      x={-GRID_PITCH * 0.5}
+                      y={GRID_PITCH * 0.8}
+                      width={GRID_PITCH}
+                      text="BROKEN"
+                      fontSize={6}
+                      fontFamily="monospace"
+                      fill="#ef4444"
+                      align="center"
+                    />
+                  </Group>
+                );
+              }
               
               const compFilterMatch = !componentFilterActive ||
                 c.reference.toLowerCase().includes(componentSearchFilter.toLowerCase()) ||
@@ -1761,33 +1867,70 @@ export const StripboardCanvas = () => {
             activeComponents.map((c: ComponentType) => {
               const def = definitionMap.get(c.definitionId);
               if (!def) {
-                // Definition not found - render pins to show the component exists
+                // Definition not found - render error placeholder
                 console.warn(`Component ${c.reference} (${c.id}) has invalid definitionId: ${c.definitionId}`);
-                // Render just the pins as circles to show the component exists
+                const isSelected = selectedItems.includes(c.id);
                 return (
                   <Group
                     key={c.id}
-                    x={c.position.col * 25.4}
-                    y={c.position.row * 25.4}
+                    name={`component:${c.id}`}
+                    x={c.position.col * GRID_PITCH}
+                    y={c.position.row * GRID_PITCH}
                   >
-                    <Text
-                      x={0}
-                      y={-15}
-                      text={`${c.reference} (missing def)`}
-                      fontSize={10}
-                      fill="#ff4444"
+                    {/* Error indicator box */}
+                    <Rect
+                      x={-GRID_PITCH * 0.5}
+                      y={-GRID_PITCH * 0.5}
+                      width={GRID_PITCH}
+                      height={GRID_PITCH}
+                      fill="#dc2626"
+                      stroke={isSelected ? '#c8ff2e' : '#ef4444'}
+                      strokeWidth={isSelected ? 3 : 2}
+                      cornerRadius={3}
+                      opacity={0.8}
                     />
-                    {c.pins.map((pin, i) => (
-                      <Circle
-                        key={`${c.id}-pin-${i}`}
-                        x={(pin.position.col - c.position.col) * 25.4}
-                        y={(pin.position.row - c.position.row) * 25.4}
-                        radius={4.5}
-                        fill="#ff4444"
-                        stroke="#ff0000"
-                        strokeWidth={2}
+                    {/* Error icon (X) */}
+                    <Line
+                      points={[
+                        -GRID_PITCH * 0.3, -GRID_PITCH * 0.3,
+                        GRID_PITCH * 0.3, GRID_PITCH * 0.3
+                      ]}
+                      stroke="#fff"
+                      strokeWidth={2}
+                    />
+                    <Line
+                      points={[
+                        GRID_PITCH * 0.3, -GRID_PITCH * 0.3,
+                        -GRID_PITCH * 0.3, GRID_PITCH * 0.3
+                      ]}
+                      stroke="#fff"
+                      strokeWidth={2}
+                    />
+                    {/* Reference label */}
+                    {layerVisibility.refDesignations && (
+                      <Text
+                        x={-GRID_PITCH * 0.5}
+                        y={GRID_PITCH * 0.6}
+                        width={GRID_PITCH}
+                        text={c.reference}
+                        fontSize={8}
+                        fontFamily="monospace"
+                        fill="#ef4444"
+                        align="center"
+                        fontStyle="bold"
                       />
-                    ))}
+                    )}
+                    {/* "Broken" label */}
+                    <Text
+                      x={-GRID_PITCH * 0.5}
+                      y={GRID_PITCH * 0.8}
+                      width={GRID_PITCH}
+                      text="BROKEN"
+                      fontSize={6}
+                      fontFamily="monospace"
+                      fill="#ef4444"
+                      align="center"
+                    />
                   </Group>
                 );
               }
@@ -2038,6 +2181,25 @@ export const StripboardCanvas = () => {
         const comp = components.find((c) => c.id === contextMenu.componentId);
         const def = comp ? componentDefinitions.find((d) => d.id === comp.definitionId) : null;
         const compIsLed = def?.id.includes('led') ?? false;
+        
+        // Allow reset for ALL components that have a library definition
+        // IMPORTANT: Check even if def is null (broken components)
+        let canReset = false;
+        if (comp) {
+          const baseDefId = comp.definitionId
+            .replace(/-custom-.*$/, '')
+            .replace(/^(.*?)-custom$/, '$1');
+          
+          // Exclude generic/custom components (user-created ones)
+          const isLibraryComponent = !baseDefId.startsWith('generic-') && !baseDefId.startsWith('custom-');
+          
+          if (isLibraryComponent) {
+            // Verify base definition exists in library
+            // This works even if current definition is missing (broken component)
+            canReset = componentDefinitions.some((d) => d.id === baseDefId);
+          }
+        }
+        
         return (
           <ComponentContextMenu
             state={contextMenu}
@@ -2046,6 +2208,8 @@ export const StripboardCanvas = () => {
             onRotateComponent={handleRotateComponent}
             onDeleteComponent={handleDeleteComponent}
             onDuplicateComponent={handleDuplicateComponent}
+            onResetToDefault={canReset ? handleResetToDefault : undefined}
+            hasCustomVariant={canReset}
             isLed={compIsLed}
             onChangeLedColor={(id, color) => {
               saveToHistory();
