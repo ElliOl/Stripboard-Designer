@@ -79,6 +79,188 @@
       "description": "16-pin DIP (0.3\" wide, e.g. CD4017, 74HC595)"
     }
   },
+
+  {
+    "id": "mcu-arduino-nano",
+    "name": "Arduino Nano",
+    "category": "IC",
+    "footprint": {
+      "type": "DIP",
+      "dimensions": { "rows": 2, "cols": 15, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1",  "name": "D1/TX",  "position": { "row": 0, "col": 0 } },
+      { "number": "2",  "name": "D0/RX",  "position": { "row": 0, "col": 1 } },
+      { "number": "3",  "name": "RST",    "position": { "row": 0, "col": 2 } },
+      { "number": "4",  "name": "GND",    "position": { "row": 0, "col": 3 } },
+      { "number": "5",  "name": "D2",     "position": { "row": 0, "col": 4 } },
+      { "number": "6",  "name": "D3",     "position": { "row": 0, "col": 5 } },
+      { "number": "7",  "name": "D4",     "position": { "row": 0, "col": 6 } },
+      { "number": "8",  "name": "D5",     "position": { "row": 0, "col": 7 } },
+      { "number": "9",  "name": "D6",     "position": { "row": 0, "col": 8 } },
+      { "number": "10", "name": "D7",     "position": { "row": 0, "col": 9 } },
+      { "number": "11", "name": "D8",     "position": { "row": 0, "col": 10 } },
+      { "number": "12", "name": "D9",     "position": { "row": 0, "col": 11 } },
+      { "number": "13", "name": "D10",    "position": { "row": 0, "col": 12 } },
+      { "number": "14", "name": "D11",    "position": { "row": 0, "col": 13 } },
+      { "number": "15", "name": "D12",    "position": { "row": 0, "col": 14 } },
+      { "number": "16", "name": "D13",    "position": { "row": 6, "col": 14 } },
+      { "number": "17", "name": "3V3",    "position": { "row": 6, "col": 13 } },
+      { "number": "18", "name": "AREF",   "position": { "row": 6, "col": 12 } },
+      { "number": "19", "name": "A0",     "position": { "row": 6, "col": 11 } },
+      { "number": "20", "name": "A1",     "position": { "row": 6, "col": 10 } },
+      { "number": "21", "name": "A2",     "position": { "row": 6, "col": 9 } },
+      { "number": "22", "name": "A3",     "position": { "row": 6, "col": 8 } },
+      { "number": "23", "name": "A4",     "position": { "row": 6, "col": 7 } },
+      { "number": "24", "name": "A5",     "position": { "row": 6, "col": 6 } },
+      { "number": "25", "name": "A6",     "position": { "row": 6, "col": 5 } },
+      { "number": "26", "name": "A7",     "position": { "row": 6, "col": 4 } },
+      { "number": "27", "name": "5V",     "position": { "row": 6, "col": 3 } },
+      { "number": "28", "name": "RST",    "position": { "row": 6, "col": 2 } },
+      { "number": "29", "name": "GND",    "position": { "row": 6, "col": 1 } },
+      { "number": "30", "name": "VIN",    "position": { "row": 6, "col": 0 } }
+    ],
+    "metadata": {
+      "description": "Arduino Nano (30-pin, 0.6\" wide)"
+    }
+  },
+  {
+    "id": "mcu-daisy-seed",
+    "name": "Daisy Seed",
+    "category": "IC",
+    "footprint": {
+      "type": "DIP",
+      "dimensions": { "rows": 2, "cols": 20, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1",  "position": { "row": 0, "col": 0 } },
+      { "number": "2",  "position": { "row": 0, "col": 1 } },
+      { "number": "3",  "position": { "row": 0, "col": 2 } },
+      { "number": "4",  "position": { "row": 0, "col": 3 } },
+      { "number": "5",  "position": { "row": 0, "col": 4 } },
+      { "number": "6",  "position": { "row": 0, "col": 5 } },
+      { "number": "7",  "position": { "row": 0, "col": 6 } },
+      { "number": "8",  "position": { "row": 0, "col": 7 } },
+      { "number": "9",  "position": { "row": 0, "col": 8 } },
+      { "number": "10", "position": { "row": 0, "col": 9 } },
+      { "number": "11", "position": { "row": 0, "col": 10 } },
+      { "number": "12", "position": { "row": 0, "col": 11 } },
+      { "number": "13", "position": { "row": 0, "col": 12 } },
+      { "number": "14", "position": { "row": 0, "col": 13 } },
+      { "number": "15", "position": { "row": 0, "col": 14 } },
+      { "number": "16", "position": { "row": 0, "col": 15 } },
+      { "number": "17", "position": { "row": 0, "col": 16 } },
+      { "number": "18", "position": { "row": 0, "col": 17 } },
+      { "number": "19", "position": { "row": 0, "col": 18 } },
+      { "number": "20", "position": { "row": 0, "col": 19 } },
+      { "number": "21", "position": { "row": 6, "col": 19 } },
+      { "number": "22", "position": { "row": 6, "col": 18 } },
+      { "number": "23", "position": { "row": 6, "col": 17 } },
+      { "number": "24", "position": { "row": 6, "col": 16 } },
+      { "number": "25", "position": { "row": 6, "col": 15 } },
+      { "number": "26", "position": { "row": 6, "col": 14 } },
+      { "number": "27", "position": { "row": 6, "col": 13 } },
+      { "number": "28", "position": { "row": 6, "col": 12 } },
+      { "number": "29", "position": { "row": 6, "col": 11 } },
+      { "number": "30", "position": { "row": 6, "col": 10 } },
+      { "number": "31", "position": { "row": 6, "col": 9 } },
+      { "number": "32", "position": { "row": 6, "col": 8 } },
+      { "number": "33", "position": { "row": 6, "col": 7 } },
+      { "number": "34", "position": { "row": 6, "col": 6 } },
+      { "number": "35", "position": { "row": 6, "col": 5 } },
+      { "number": "36", "position": { "row": 6, "col": 4 } },
+      { "number": "37", "position": { "row": 6, "col": 3 } },
+      { "number": "38", "position": { "row": 6, "col": 2 } },
+      { "number": "39", "position": { "row": 6, "col": 1 } },
+      { "number": "40", "position": { "row": 6, "col": 0 } }
+    ],
+    "metadata": {
+      "description": "Electrosmith Daisy Seed (40-pin, 0.6\" wide)"
+    }
+  },
+  {
+    "id": "mcu-bluepill",
+    "name": "STM32 Blue Pill",
+    "category": "IC",
+    "footprint": {
+      "type": "DIP",
+      "dimensions": { "rows": 2, "cols": 20, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1",  "name": "B12", "position": { "row": 0, "col": 0 } },
+      { "number": "2",  "name": "B13", "position": { "row": 0, "col": 1 } },
+      { "number": "3",  "name": "B14", "position": { "row": 0, "col": 2 } },
+      { "number": "4",  "name": "B15", "position": { "row": 0, "col": 3 } },
+      { "number": "5",  "name": "A8",  "position": { "row": 0, "col": 4 } },
+      { "number": "6",  "name": "A9",  "position": { "row": 0, "col": 5 } },
+      { "number": "7",  "name": "A10", "position": { "row": 0, "col": 6 } },
+      { "number": "8",  "name": "A11", "position": { "row": 0, "col": 7 } },
+      { "number": "9",  "name": "A12", "position": { "row": 0, "col": 8 } },
+      { "number": "10", "name": "A15", "position": { "row": 0, "col": 9 } },
+      { "number": "11", "name": "B3",  "position": { "row": 0, "col": 10 } },
+      { "number": "12", "name": "B4",  "position": { "row": 0, "col": 11 } },
+      { "number": "13", "name": "B5",  "position": { "row": 0, "col": 12 } },
+      { "number": "14", "name": "B6",  "position": { "row": 0, "col": 13 } },
+      { "number": "15", "name": "B7",  "position": { "row": 0, "col": 14 } },
+      { "number": "16", "name": "B8",  "position": { "row": 0, "col": 15 } },
+      { "number": "17", "name": "B9",  "position": { "row": 0, "col": 16 } },
+      { "number": "18", "name": "5V",  "position": { "row": 0, "col": 17 } },
+      { "number": "19", "name": "GND", "position": { "row": 0, "col": 18 } },
+      { "number": "20", "name": "3V3", "position": { "row": 0, "col": 19 } },
+      { "number": "21", "name": "B11", "position": { "row": 6, "col": 0 } },
+      { "number": "22", "name": "B10", "position": { "row": 6, "col": 1 } },
+      { "number": "23", "name": "B1",  "position": { "row": 6, "col": 2 } },
+      { "number": "24", "name": "B0",  "position": { "row": 6, "col": 3 } },
+      { "number": "25", "name": "A7",  "position": { "row": 6, "col": 4 } },
+      { "number": "26", "name": "A6",  "position": { "row": 6, "col": 5 } },
+      { "number": "27", "name": "A5",  "position": { "row": 6, "col": 6 } },
+      { "number": "28", "name": "A4",  "position": { "row": 6, "col": 7 } },
+      { "number": "29", "name": "A3",  "position": { "row": 6, "col": 8 } },
+      { "number": "30", "name": "A2",  "position": { "row": 6, "col": 9 } },
+      { "number": "31", "name": "A1",  "position": { "row": 6, "col": 10 } },
+      { "number": "32", "name": "A0",  "position": { "row": 6, "col": 11 } },
+      { "number": "33", "name": "C15", "position": { "row": 6, "col": 12 } },
+      { "number": "34", "name": "C14", "position": { "row": 6, "col": 13 } },
+      { "number": "35", "name": "C13", "position": { "row": 6, "col": 14 } },
+      { "number": "36", "name": "RST", "position": { "row": 6, "col": 15 } },
+      { "number": "37", "name": "3V3", "position": { "row": 6, "col": 16 } },
+      { "number": "38", "name": "GND", "position": { "row": 6, "col": 17 } },
+      { "number": "39", "name": "GND", "position": { "row": 6, "col": 18 } },
+      { "number": "40", "name": "VBT", "position": { "row": 6, "col": 19 } }
+    ],
+    "metadata": {
+      "description": "STM32F103C8T6 Blue Pill (40-pin, 0.6\" wide)"
+    }
+  },
+  {
+    "id": "mcu-seeed-xiao",
+    "name": "Seeed XIAO",
+    "category": "IC",
+    "footprint": {
+      "type": "DIP",
+      "dimensions": { "rows": 2, "cols": 7, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1",  "name": "D0",  "position": { "row": 0, "col": 0 } },
+      { "number": "2",  "name": "D1",  "position": { "row": 0, "col": 1 } },
+      { "number": "3",  "name": "D2",  "position": { "row": 0, "col": 2 } },
+      { "number": "4",  "name": "D3",  "position": { "row": 0, "col": 3 } },
+      { "number": "5",  "name": "D4",  "position": { "row": 0, "col": 4 } },
+      { "number": "6",  "name": "D5",  "position": { "row": 0, "col": 5 } },
+      { "number": "7",  "name": "D6",  "position": { "row": 0, "col": 6 } },
+      { "number": "8",  "name": "D7",  "position": { "row": 6, "col": 6 } },
+      { "number": "9",  "name": "D8",  "position": { "row": 6, "col": 5 } },
+      { "number": "10", "name": "D9",  "position": { "row": 6, "col": 4 } },
+      { "number": "11", "name": "D10", "position": { "row": 6, "col": 3 } },
+      { "number": "12", "name": "3V3", "position": { "row": 6, "col": 2 } },
+      { "number": "13", "name": "GND", "position": { "row": 6, "col": 1 } },
+      { "number": "14", "name": "5V",  "position": { "row": 6, "col": 0 } }
+    ],
+    "metadata": {
+      "description": "Seeed XIAO (14-pin, 0.6\" wide)"
+    }
+  },
+
   {
     "id": "resistor",
     "name": "Resistor (Axial)",
@@ -92,7 +274,7 @@
       { "number": "2", "position": { "row": 0, "col": 3 } }
     ],
     "metadata": {
-      "description": "Standard axial resistor (4 hole spacing)"
+      "description": "Standard axial resistor (4 hole spacing, 1% blue body)"
     }
   },
   {
@@ -108,12 +290,45 @@
       { "number": "2", "position": { "row": 0, "col": 2 } }
     ],
     "metadata": {
-      "description": "Small axial resistor (3 hole spacing)"
+      "description": "Small axial resistor (3 hole spacing, 1% blue body)"
     }
   },
   {
-    "id": "capacitor",
-    "name": "Capacitor (Radial)",
+    "id": "resistor-upright",
+    "name": "Resistor (Upright)",
+    "category": "Passive",
+    "footprint": {
+      "type": "Axial",
+      "dimensions": { "rows": 1, "cols": 2, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 1 } }
+    ],
+    "metadata": {
+      "description": "Upright resistor (both pins adjacent, 1 hole spacing)"
+    }
+  },
+
+  {
+    "id": "capacitor-rect",
+    "name": "Capacitor (Film/Ceramic)",
+    "category": "Passive",
+    "footprint": {
+      "type": "Axial",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "Non-polarized rectangular capacitor (film/ceramic, 3 hole spacing)"
+    }
+  },
+  {
+    "id": "electrolytic-small",
+    "name": "Electrolytic Cap (Small)",
     "category": "Passive",
     "footprint": {
       "type": "Radial",
@@ -124,12 +339,12 @@
       { "number": "2", "name": "-", "position": { "row": 0, "col": 1 } }
     ],
     "metadata": {
-      "description": "Radial electrolytic capacitor (2 hole spacing)"
+      "description": "Small electrolytic capacitor (5mm, polarized, 2 hole spacing)"
     }
   },
   {
-    "id": "capacitor-wide",
-    "name": "Capacitor (Wide)",
+    "id": "electrolytic-large",
+    "name": "Electrolytic Cap (Large)",
     "category": "Passive",
     "footprint": {
       "type": "Radial",
@@ -140,40 +355,59 @@
       { "number": "2", "name": "-", "position": { "row": 0, "col": 2 } }
     ],
     "metadata": {
-      "description": "Large radial electrolytic capacitor (3 hole spacing)"
+      "description": "Large electrolytic capacitor (~8mm, polarized, close pins, big can)"
     }
   },
+
   {
-    "id": "led",
-    "name": "LED",
-    "category": "Discrete",
+    "id": "inductor",
+    "name": "Inductor (Radial)",
+    "category": "Passive",
     "footprint": {
       "type": "Radial",
       "dimensions": { "rows": 1, "cols": 2, "pitch": 2.54 }
     },
     "pins": [
-      { "number": "1", "name": "A", "position": { "row": 0, "col": 0 } },
-      { "number": "2", "name": "K", "position": { "row": 0, "col": 1 } }
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 1 } }
     ],
     "metadata": {
-      "description": "Standard 5mm LED (Anode/Cathode)"
+      "description": "Radial inductor / choke"
     }
   },
+
   {
-    "id": "transistor",
-    "name": "Transistor (TO-92)",
-    "category": "Discrete",
+    "id": "trimpot",
+    "name": "Trim Pot (Side Adjust)",
+    "category": "Passive",
     "footprint": {
-      "type": "SIP",
+      "type": "TrimPot",
       "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
     },
     "pins": [
-      { "number": "1", "name": "E", "position": { "row": 0, "col": 0 } },
-      { "number": "2", "name": "B", "position": { "row": 0, "col": 1 } },
-      { "number": "3", "name": "C", "position": { "row": 0, "col": 2 } }
+      { "number": "1", "name": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "W", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "3", "position": { "row": 0, "col": 2 } }
     ],
     "metadata": {
-      "description": "TO-92 transistor (E/B/C pinout)"
+      "description": "Side-adjust trimmer potentiometer (3-pin inline, blue body)"
+    }
+  },
+  {
+    "id": "trimpot-top",
+    "name": "Trim Pot (Top Adjust)",
+    "category": "Passive",
+    "footprint": {
+      "type": "TrimPotTop",
+      "dimensions": { "rows": 2, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "W", "position": { "row": 1, "col": 1 } },
+      { "number": "3", "name": "3", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "Top-adjust trimmer potentiometer (3-pin triangular, blue body)"
     }
   },
   {
@@ -190,7 +424,371 @@
       { "number": "3", "name": "3", "position": { "row": 0, "col": 2 } }
     ],
     "metadata": {
-      "description": "Trimmer / potentiometer (3-pin SIP: pin 1, wiper, pin 3)"
+      "description": "Panel-mount potentiometer (3-pin SIP)"
+    }
+  },
+
+  {
+    "id": "diode",
+    "name": "Diode",
+    "category": "Discrete",
+    "footprint": {
+      "type": "Axial",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "A", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "K", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "Standard rectifier diode (e.g. 1N4148, 1N4001)"
+    }
+  },
+  {
+    "id": "zener-diode",
+    "name": "Zener Diode",
+    "category": "Discrete",
+    "footprint": {
+      "type": "Axial",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "A", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "K", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "Zener diode (e.g. 1N4733, BZX55)"
+    }
+  },
+  {
+    "id": "diode-large",
+    "name": "Diode (Large)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "Axial",
+      "dimensions": { "rows": 1, "cols": 4, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "A", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "K", "position": { "row": 0, "col": 3 } }
+    ],
+    "metadata": {
+      "description": "Large rectifier diode (4 hole spacing, e.g. 1N5400)"
+    }
+  },
+  {
+    "id": "zener-diode-large",
+    "name": "Zener Diode (Large)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "Axial",
+      "dimensions": { "rows": 1, "cols": 4, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "A", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "K", "position": { "row": 0, "col": 3 } }
+    ],
+    "metadata": {
+      "description": "Large zener diode (4 hole spacing)"
+    }
+  },
+
+  {
+    "id": "transistor-npn",
+    "name": "NPN Transistor (TO-92)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "TO92",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "E", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "B", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "C", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "NPN transistor TO-92 (e.g. 2N2222, BC547)"
+    }
+  },
+  {
+    "id": "transistor-pnp",
+    "name": "PNP Transistor (TO-92)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "TO92",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "E", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "B", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "C", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "PNP transistor TO-92 (e.g. 2N2907, BC557)"
+    }
+  },
+  {
+    "id": "transistor",
+    "name": "Transistor (TO-92)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "TO92",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "E", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "B", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "C", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "Generic TO-92 transistor (EBC pinout)"
+    }
+  },
+  {
+    "id": "jfet",
+    "name": "JFET (TO-92)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "TO92",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "S", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "G", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "D", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "JFET TO-92 (e.g. 2N5457, J201)"
+    }
+  },
+  {
+    "id": "mosfet-to92",
+    "name": "MOSFET (TO-92)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "TO92",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "S", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "G", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "D", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "MOSFET TO-92 (e.g. 2N7000, BS170)"
+    }
+  },
+
+  {
+    "id": "regulator-to220",
+    "name": "Voltage Regulator (TO-220)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "TO220",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "IN",  "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "GND", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "OUT", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "TO-220 voltage regulator (e.g. 7805, LM317)"
+    }
+  },
+  {
+    "id": "mosfet-to220",
+    "name": "MOSFET (TO-220)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "TO220",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "G", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "D", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "S", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "TO-220 MOSFET (e.g. IRF520, IRF9540)"
+    }
+  },
+  {
+    "id": "shunt-regulator",
+    "name": "Shunt Regulator (TO-92)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "TO92",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "R",   "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "A/K", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "K/A", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "Shunt regulator TO-92 (e.g. TL431)"
+    }
+  },
+
+  {
+    "id": "led",
+    "name": "LED (5mm)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "Radial",
+      "dimensions": { "rows": 1, "cols": 2, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "A", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "K", "position": { "row": 0, "col": 1 } }
+    ],
+    "metadata": {
+      "description": "Standard 5mm LED (right-click to change color)"
+    }
+  },
+  {
+    "id": "led-bicolor",
+    "name": "LED (Bi-Color)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "Radial",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "A1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "K",  "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "A2", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "Bi-color LED (A1-K-A2, 3 pin)"
+    }
+  },
+  {
+    "id": "led-rgb",
+    "name": "LED (RGB)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "Radial",
+      "dimensions": { "rows": 1, "cols": 4, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "R", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "C", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "G", "position": { "row": 0, "col": 2 } },
+      { "number": "4", "name": "B", "position": { "row": 0, "col": 3 } }
+    ],
+    "metadata": {
+      "description": "Common-cathode RGB LED (R-C-G-B, 4 pin)"
+    }
+  },
+
+  {
+    "id": "encoder",
+    "name": "Rotary Encoder",
+    "category": "Connector",
+    "footprint": {
+      "type": "SIP",
+      "dimensions": { "rows": 1, "cols": 5, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "GND", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "VCC", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "name": "SW",  "position": { "row": 0, "col": 2 } },
+      { "number": "4", "name": "A",   "position": { "row": 0, "col": 3 } },
+      { "number": "5", "name": "B",   "position": { "row": 0, "col": 4 } }
+    ],
+    "metadata": {
+      "description": "Rotary encoder with push switch (GND, VCC, SW, A, B)"
+    }
+  },
+
+  {
+    "id": "switch-spdt",
+    "name": "Switch (SPDT)",
+    "category": "Connector",
+    "footprint": {
+      "type": "SIP",
+      "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "position": { "row": 0, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "SPDT toggle switch (3-pin, single row)"
+    }
+  },
+  {
+    "id": "switch-dpdt",
+    "name": "Switch (DPDT)",
+    "category": "Connector",
+    "footprint": {
+      "type": "SIP",
+      "dimensions": { "rows": 2, "cols": 3, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 1 } },
+      { "number": "3", "position": { "row": 0, "col": 2 } },
+      { "number": "4", "position": { "row": 1, "col": 0 } },
+      { "number": "5", "position": { "row": 1, "col": 1 } },
+      { "number": "6", "position": { "row": 1, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "DPDT toggle switch (6-pin, 2x3 compact)"
+    }
+  },
+  {
+    "id": "button-tact",
+    "name": "Tact Button",
+    "category": "Connector",
+    "footprint": {
+      "type": "TactSwitch",
+      "dimensions": { "rows": 2, "cols": 2, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 2 } },
+      { "number": "3", "position": { "row": 2, "col": 0 } },
+      { "number": "4", "position": { "row": 2, "col": 2 } }
+    ],
+    "metadata": {
+      "description": "6mm tactile push button (4-pin, 1-3 / 2-4 connected)"
+    }
+  },
+  {
+    "id": "button-block",
+    "name": "Push Button (2-pin)",
+    "category": "Connector",
+    "footprint": {
+      "type": "SIP",
+      "dimensions": { "rows": 1, "cols": 2, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 1 } }
+    ],
+    "metadata": {
+      "description": "Simple 2-pin push button"
+    }
+  },
+
+  {
+    "id": "header-1x2",
+    "name": "Pin Header 1x2",
+    "category": "Connector",
+    "footprint": {
+      "type": "SIP",
+      "dimensions": { "rows": 1, "cols": 2, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "position": { "row": 0, "col": 1 } }
+    ],
+    "metadata": {
+      "description": "2-pin single row header / terminal block"
     }
   },
   {
@@ -209,22 +807,6 @@
     ],
     "metadata": {
       "description": "4-pin single row header"
-    }
-  },
-  {
-    "id": "header-1x2",
-    "name": "Pin Header 1x2",
-    "category": "Connector",
-    "footprint": {
-      "type": "SIP",
-      "dimensions": { "rows": 1, "cols": 2, "pitch": 2.54 }
-    },
-    "pins": [
-      { "number": "1", "position": { "row": 0, "col": 0 } },
-      { "number": "2", "position": { "row": 0, "col": 1 } }
-    ],
-    "metadata": {
-      "description": "2-pin single row header / terminal block"
     }
   }
 ]

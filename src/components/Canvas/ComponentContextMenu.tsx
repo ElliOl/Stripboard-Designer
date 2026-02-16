@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings, RotateCw, Trash2, Copy } from 'lucide-react';
+import { Settings, RotateCw, Trash2, Copy, Palette } from 'lucide-react';
 
 export interface ContextMenuState {
   componentId: string;
@@ -15,7 +15,18 @@ interface ComponentContextMenuProps {
   onRotateComponent: (componentId: string) => void;
   onDeleteComponent: (componentId: string) => void;
   onDuplicateComponent: (componentId: string) => void;
+  onChangeLedColor?: (componentId: string, color: string) => void;
+  isLed?: boolean;
 }
+
+const LED_COLOR_OPTIONS = [
+  { name: 'Red',    color: 'red',    hex: '#dc2626' },
+  { name: 'Green',  color: 'green',  hex: '#16a34a' },
+  { name: 'Blue',   color: 'blue',   hex: '#2563eb' },
+  { name: 'Yellow', color: 'yellow', hex: '#eab308' },
+  { name: 'Orange', color: 'orange', hex: '#ea580c' },
+  { name: 'White',  color: 'white',  hex: '#d4d4d8' },
+];
 
 export const ComponentContextMenu = ({
   state,
@@ -24,8 +35,11 @@ export const ComponentContextMenu = ({
   onRotateComponent,
   onDeleteComponent,
   onDuplicateComponent,
+  onChangeLedColor,
+  isLed = false,
 }: ComponentContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [showColorPicker, setShowColorPicker] = useState(false);
 
   // Close on click outside or Escape
   useEffect(() => {
@@ -105,6 +119,13 @@ export const ComponentContextMenu = ({
         onClose();
       },
     },
+    ...(isLed && onChangeLedColor ? [{
+      label: 'LED Color',
+      icon: Palette,
+      action: () => {
+        setShowColorPicker(!showColorPicker);
+      },
+    }] : []),
     { separator: true } as const,
     {
       label: 'Delete',
@@ -158,6 +179,27 @@ export const ComponentContextMenu = ({
             </button>
           );
         })}
+
+        {/* LED Color picker submenu */}
+        {showColorPicker && onChangeLedColor && (
+          <div className="border-t border-[#2a2a34] mt-1 pt-1 px-2 pb-1">
+            <div className="text-[10px] text-[#52525b] mb-1 px-1">Choose color:</div>
+            <div className="flex gap-1 flex-wrap">
+              {LED_COLOR_OPTIONS.map((opt) => (
+                <button
+                  key={opt.color}
+                  onClick={() => {
+                    onChangeLedColor(state.componentId, opt.color);
+                    onClose();
+                  }}
+                  className="w-5 h-5 rounded-full border border-[#3a3a44] hover:border-white transition-colors"
+                  style={{ backgroundColor: opt.hex }}
+                  title={opt.name}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>,
     document.body

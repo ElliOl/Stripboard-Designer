@@ -4,7 +4,7 @@
 // used during netlist import for unsupported footprints and
 // by the Edit Component dialog when users reconfigure pins.
 
-import type { ComponentDefinition, PinDefinition } from '@/lib/types';
+import type { ComponentDefinition, PinDefinition, FootprintTypeName } from '@/lib/types';
 
 /**
  * Sort pin numbers: numeric pins first (ascending), then alpha pins.
@@ -24,7 +24,7 @@ function sortPinNumbers(pins: string[]): string[] {
  * Build a stable definition ID from footprint type, pin count, and pin labels.
  */
 export function buildGenericDefId(
-  footprintType: 'DIP' | 'SIP' | 'Axial' | 'Radial' | 'Custom',
+  footprintType: FootprintTypeName,
   pinNumbers: string[]
 ): string {
   const sorted = sortPinNumbers(pinNumbers);
@@ -42,7 +42,7 @@ export function buildGenericDefId(
  */
 export function createGenericDefinition(
   pinNumbers: string[],
-  footprintType?: 'DIP' | 'SIP' | 'Axial' | 'Radial' | 'Custom'
+  footprintType?: FootprintTypeName
 ): ComponentDefinition {
   const sorted = sortPinNumbers(pinNumbers);
   const pinCount = sorted.length;
@@ -112,7 +112,7 @@ export function createGenericDefinition(
  * Create a definition from explicit parameters (used by the Edit Component dialog).
  */
 export function createDefinitionFromConfig(config: {
-  footprintType: 'DIP' | 'SIP' | 'Axial' | 'Radial' | 'Custom';
+  footprintType: FootprintTypeName;
   pinCount: number;
   pinNumbers?: string[];
 }): ComponentDefinition {
@@ -137,7 +137,7 @@ export interface PinPlacement {
  * Used by the visual pin editor in the Edit Component dialog.
  */
 export function createDefinitionFromPlacements(
-  footprintType: 'DIP' | 'SIP' | 'Axial' | 'Radial' | 'Custom',
+  footprintType: FootprintTypeName,
   placements: PinPlacement[]
 ): ComponentDefinition {
   if (placements.length === 0) {

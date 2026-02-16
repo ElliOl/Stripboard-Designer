@@ -6,11 +6,13 @@ import { Grid } from './Grid';
 import { Strip } from './Strip';
 import { Component } from './Component';
 import { Wire } from './Wire';
-import { ReferenceImage, REF_IMAGE_ID, REF_IMAGE_NAME_PREFIX } from './ReferenceImage';
+import { ReferenceImage, REF_IMAGE_ID } from './ReferenceImage';
 import {
   ComponentContextMenu,
   type ContextMenuState,
 } from './ComponentContextMenu';
+import { ImageContextMenu, type ImageContextMenuState } from './ImageContextMenu';
+import { CropImageDialog } from './CropImageDialog';
 import { EditComponentDialog } from '@/components/EditComponentDialog';
 import { useStripboardStore } from '@/store/stripboard';
 import { calculateRatsNest } from '@/lib/ratsnest';
@@ -129,6 +131,8 @@ export const StripboardCanvas = () => {
   const removeComponent = useStripboardStore((s) => s.removeComponent);
   const updateReferenceImage = useStripboardStore((s) => s.updateReferenceImage);
   const updateReferenceImageById = useStripboardStore((s) => s.updateReferenceImageById);
+  const copySelected = useStripboardStore((s) => s.copySelected);
+  const paste = useStripboardStore((s) => s.paste);
 
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -152,9 +156,11 @@ export const StripboardCanvas = () => {
 
   // ─── Context Menu & Edit Dialog ───────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [imageContextMenu, setImageContextMenu] = useState<ImageContextMenuState | null>(null);
   const [editingComponentId, setEditingComponentId] = useState<string | null>(
     null
   );
+  const [croppingImageId, setCroppingImageId] = useState<string | null>(null);
   const rightClickedRef = useRef<string | null>(null);
 
   // ─── Connectivity Analysis (Deferred) ────────────────────────
@@ -285,6 +291,34 @@ export const StripboardCanvas = () => {
     setSelectionBox(null);
   }, [activeTool]);
 
+  // ─── Keyboard Shortcuts (Copy / Paste) ─────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in an input field
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+
+      // Copy: Cmd/Ctrl+C
+      if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
+        e.preventDefault();
+        copySelected();
+      }
+
+      // Paste: Cmd/Ctrl+V
+      if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
+        e.preventDefault();
+        paste();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [copySelected, paste]);
+
   // ─── Resize ────────────────────────────────────────────────
   useEffect(() => {
     const handleResize = () => {
@@ -402,10 +436,17 @@ export const StripboardCanvas = () => {
   // ─── Reference Prefix ─────────────────────────────────────
   const getRefPrefix = (defId: string, category: string): string => {
     if (defId.includes('resistor')) return 'R';
-    if (defId.includes('capacitor')) return 'C';
+    if (defId.includes('capacitor') || defId.includes('electrolytic')) return 'C';
+    if (defId.includes('inductor')) return 'L';
     if (defId.includes('led')) return 'D';
-    if (defId.includes('transistor')) return 'Q';
+    if (defId.includes('diode') || defId.includes('zener')) return 'D';
+    if (defId.includes('transistor') || defId.includes('jfet') || defId.includes('mosfet')) return 'Q';
+    if (defId.includes('regulator') || defId.includes('shunt')) return 'U';
+    if (defId.includes('trimpot') || defId.includes('potentiometer')) return 'RV';
+    if (defId.includes('encoder')) return 'SW';
+    if (defId.includes('switch') || defId.includes('button')) return 'SW';
     if (defId.includes('header')) return 'J';
+    if (defId.includes('mcu-')) return 'U';
     if (category === 'IC') return 'U';
     if (category === 'Connector') return 'J';
     if (category === 'Discrete') return 'Q';
@@ -493,8 +534,9 @@ export const StripboardCanvas = () => {
 
     // Close any open context menu on any click
     if (contextMenu) setContextMenu(null);
+    if (imageContextMenu) setImageContextMenu(null);
 
-    // Right-click: detect if clicking on a component for context menu
+    // Right-click: detect if clicking on a component or image for context menu
     if (evt.button === 2) {
       const itemId = getItemIdFromTarget(e.target);
       if (itemId) {
@@ -502,6 +544,14 @@ export const StripboardCanvas = () => {
         if (comp) {
           rightClickedRef.current = itemId;
           // Stop propagation so the container handler doesn't start panning
+          evt.stopPropagation();
+          return;
+        }
+        
+        // Check if it's a reference image
+        const img = referenceImages.find((img) => img.id === itemId);
+        if (img) {
+          rightClickedRef.current = itemId;
           evt.stopPropagation();
           return;
         }
@@ -865,17 +915,38 @@ export const StripboardCanvas = () => {
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
-      // If a component was right-clicked (detected in handleMouseDown)
+      // If a component or image was right-clicked (detected in handleMouseDown)
       if (rightClickedRef.current) {
-        setContextMenu({
-          componentId: rightClickedRef.current,
-          x: e.clientX,
-          y: e.clientY,
-        });
+        const itemId = rightClickedRef.current;
+        
+        // Check if it's a component
+        const comp = components.find((c) => c.id === itemId);
+        if (comp) {
+          setContextMenu({
+            componentId: itemId,
+            x: e.clientX,
+            y: e.clientY,
+          });
+          rightClickedRef.current = null;
+          return;
+        }
+        
+        // Check if it's a reference image
+        const img = referenceImages.find((img) => img.id === itemId);
+        if (img) {
+          setImageContextMenu({
+            imageId: itemId,
+            x: e.clientX,
+            y: e.clientY,
+          });
+          rightClickedRef.current = null;
+          return;
+        }
+        
         rightClickedRef.current = null;
       }
     },
-    []
+    [components, referenceImages]
   );
 
   // ─── Context Menu Actions ─────────────────────────────────
@@ -943,6 +1014,20 @@ export const StripboardCanvas = () => {
       });
     },
     [components, componentDefinitions, saveToHistory, addComponent]
+  );
+
+  // ─── Image Context Menu Actions ────────────────────────────
+  const handleCropImage = useCallback((id: string) => {
+    setCroppingImageId(id);
+  }, []);
+
+  const handleDeleteImage = useCallback(
+    (id: string) => {
+      saveToHistory();
+      const { removeReferenceImage } = useStripboardStore.getState();
+      removeReferenceImage(id);
+    },
+    [saveToHistory]
   );
 
   // ─── Computed ──────────────────────────────────────────────
@@ -1296,14 +1381,35 @@ export const StripboardCanvas = () => {
       </Stage>
 
       {/* ── Component Context Menu (HTML overlay) ─────────── */}
-      {contextMenu && (
-        <ComponentContextMenu
-          state={contextMenu}
-          onClose={() => setContextMenu(null)}
-          onEditComponent={handleEditComponent}
-          onRotateComponent={handleRotateComponent}
-          onDeleteComponent={handleDeleteComponent}
-          onDuplicateComponent={handleDuplicateComponent}
+      {contextMenu && (() => {
+        const comp = components.find((c) => c.id === contextMenu.componentId);
+        const def = comp ? componentDefinitions.find((d) => d.id === comp.definitionId) : null;
+        const compIsLed = def?.id.includes('led') ?? false;
+        return (
+          <ComponentContextMenu
+            state={contextMenu}
+            onClose={() => setContextMenu(null)}
+            onEditComponent={handleEditComponent}
+            onRotateComponent={handleRotateComponent}
+            onDeleteComponent={handleDeleteComponent}
+            onDuplicateComponent={handleDuplicateComponent}
+            isLed={compIsLed}
+            onChangeLedColor={(id, color) => {
+              saveToHistory();
+              const { updateComponent } = useStripboardStore.getState();
+              updateComponent(id, { ledColor: color });
+            }}
+          />
+        );
+      })()}
+
+      {/* ── Image Context Menu (HTML overlay) ─────────────── */}
+      {imageContextMenu && (
+        <ImageContextMenu
+          state={imageContextMenu}
+          onClose={() => setImageContextMenu(null)}
+          onCropImage={handleCropImage}
+          onDeleteImage={handleDeleteImage}
         />
       )}
 
@@ -1312,6 +1418,14 @@ export const StripboardCanvas = () => {
         <EditComponentDialog
           componentId={editingComponentId}
           onClose={() => setEditingComponentId(null)}
+        />
+      )}
+
+      {/* ── Crop Image Dialog ────────────────────────────── */}
+      {croppingImageId && (
+        <CropImageDialog
+          imageId={croppingImageId}
+          onClose={() => setCroppingImageId(null)}
         />
       )}
     </div>

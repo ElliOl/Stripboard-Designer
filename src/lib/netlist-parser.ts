@@ -213,43 +213,67 @@ export function mapFootprintToDefinition(
   const fp = footprint.toLowerCase();
 
   // DIP packages - match various formats like DIP-8, DIP_8, DIP-8_W7.62mm, Package_DIP:DIP-8, etc.
-  // Note: Using non-word boundary to handle cases like "DIP-16_W7.62mm"
   if (/dip[-_]?8(?:\D|$)/.test(fp)) return 'dip-8';
   if (/dip[-_]?14(?:\D|$)/.test(fp)) return 'dip-14';
   if (/dip[-_]?16(?:\D|$)/.test(fp)) return 'dip-16';
 
+  // TO-220 packages (regulators, power MOSFETs)
+  if (fp.includes('to-220') || fp.includes('to_220')) return 'regulator-to220';
+
+  // TO-92 packages (transistors, JFETs, small MOSFETs)
+  if (fp.includes('to-92') || fp.includes('to_92') || fp.includes('sot-23'))
+    return 'transistor-npn';
+
   // Potentiometers / trimmers
-  if (
-    fp.includes('potentiometer') ||
-    fp.includes('trimmer') ||
-    fp.includes('pot_')
-  )
+  if (fp.includes('trimmer') || fp.includes('trimpot'))
+    return 'trimpot';
+  if (fp.includes('potentiometer') || fp.includes('pot_'))
     return 'potentiometer';
+
+  // Inductors
+  if (fp.includes('inductor') || fp.includes('choke'))
+    return 'inductor';
 
   // Resistors
   if (fp.includes('r_axial') || fp.includes('resistor')) {
-    // Wider-spaced variants → standard, else small
     if (/p10|p7|10\.16|7\.62/.test(fp)) return 'resistor';
     return 'resistor-small';
   }
 
-  // Capacitors
-  if (
-    fp.includes('c_disc') ||
-    fp.includes('c_radial') ||
-    fp.includes('cp_radial') ||
-    fp.includes('capacitor')
-  ) {
-    if (/p5|p7|5mm|7\.5/.test(fp)) return 'capacitor-wide';
-    return 'capacitor';
+  // Electrolytic / polarized capacitors
+  if (fp.includes('cp_radial') || fp.includes('electrolytic')) {
+    if (/p7|8mm|10mm/.test(fp)) return 'electrolytic-large';
+    return 'electrolytic-small';
   }
 
+  // Non-polarized capacitors (film, ceramic, disc)
+  if (
+    fp.includes('c_disc') ||
+    fp.includes('c_rect') ||
+    fp.includes('c_radial') ||
+    fp.includes('capacitor')
+  ) {
+    if (/cp_|polariz/.test(fp)) {
+      if (/p7|8mm|10mm/.test(fp)) return 'electrolytic-large';
+      return 'electrolytic-small';
+    }
+    return 'capacitor-rect';
+  }
+
+  // Diodes
+  if (fp.includes('zener')) return 'zener-diode';
+  if (fp.includes('d_do') || fp.includes('d_a-') || fp.includes('diode'))
+    return 'diode';
+
   // LEDs
+  if (fp.includes('led_rgb') || fp.includes('rgb')) return 'led-rgb';
   if (fp.includes('led')) return 'led';
 
-  // Transistors
-  if (fp.includes('to-92') || fp.includes('to_92') || fp.includes('sot-23'))
-    return 'transistor';
+  // Switches / buttons
+  if (fp.includes('tact') || fp.includes('push_button'))
+    return 'button-tact';
+  if (fp.includes('switch') || fp.includes('toggle'))
+    return 'switch-spdt';
 
   // Pin headers
   if (fp.includes('pinheader') || fp.includes('pin_header')) {
@@ -260,24 +284,31 @@ export function mapFootprintToDefinition(
   // Connector fallback
   if (fp.includes('connector') || fp.includes('terminal')) return 'header-1x2';
 
+  // Encoder
+  if (fp.includes('encoder') || fp.includes('rotary')) return 'encoder';
+
   // Fallback on reference designator prefix
   const prefix = ref.replace(/[0-9]/g, '').toUpperCase();
   switch (prefix) {
     case 'R':
       return 'resistor';
     case 'RV':
-      return 'potentiometer';
+      return 'trimpot';
     case 'C':
-      return 'capacitor';
+      return 'electrolytic-small';
     case 'U':
       return 'dip-8';
     case 'D':
-      return 'led';
+      return 'diode';
     case 'Q':
-      return 'transistor';
+      return 'transistor-npn';
+    case 'L':
+      return 'inductor';
     case 'J':
     case 'P':
       return 'header-1x2';
+    case 'SW':
+      return 'switch-spdt';
     default:
       return null; // genuinely unsupported
   }

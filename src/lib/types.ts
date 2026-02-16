@@ -31,6 +31,18 @@ export type PinDefinition = {
 
 export type ComponentCategory = 'IC' | 'Passive' | 'Connector' | 'Discrete' | 'Custom';
 
+export type FootprintTypeName =
+  | 'DIP'
+  | 'SIP'
+  | 'Axial'
+  | 'Radial'
+  | 'Custom'
+  | 'TO92'
+  | 'TO220'
+  | 'TrimPot'
+  | 'TrimPotTop'
+  | 'TactSwitch';
+
 export type ComponentDefinition = {
   id: string;
   name: string;
@@ -45,7 +57,7 @@ export type ComponentDefinition = {
 };
 
 export type FootprintType = {
-  type: 'DIP' | 'SIP' | 'Axial' | 'Radial' | 'Custom';
+  type: FootprintTypeName;
   dimensions: {
     rows: number;
     cols: number;
@@ -62,6 +74,8 @@ export type Component = {
   position: GridPosition;
   rotation: 0 | 90 | 180 | 270;
   pins: ComponentPin[];
+  ledColor?: string; // User-customizable LED color (hex)
+  color?: string; // User-customizable primary body color (hex)
 };
 
 export type ComponentPin = {

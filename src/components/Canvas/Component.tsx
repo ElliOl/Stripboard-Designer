@@ -1,11 +1,32 @@
 import { useMemo, memo } from 'react';
-import { Group, Rect, Circle, Text, Line } from 'react-konva';
+import { Group, Rect, Circle, Text, Line, Arc } from 'react-konva';
 import type { Component as ComponentType, ComponentDefinition } from '@/lib/types';
 import { getRotatedPinPositions } from '@/lib/rotation';
 import { posKey } from '@/lib/spatial-index';
+import { resistorValueToBands, resolveLedColor } from '@/lib/resistor-colors';
 
 const GP = 25.4; // grid pitch
 const PIN_R = 4.5;
+
+/** Darken a hex color by mixing toward black. factor 0 = original, 1 = black */
+function darkenHex(hex: string, factor = 0.35): string {
+  const c = hex.replace('#', '');
+  const r = Math.round(parseInt(c.substring(0, 2), 16) * (1 - factor));
+  const g = Math.round(parseInt(c.substring(2, 4), 16) * (1 - factor));
+  const b = Math.round(parseInt(c.substring(4, 6), 16) * (1 - factor));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+/** Get text color (dark or light) based on background luminance */
+function getTextColor(bgHex: string): string {
+  const c = bgHex.replace('#', '');
+  const r = parseInt(c.substring(0, 2), 16);
+  const g = parseInt(c.substring(2, 4), 16);
+  const b = parseInt(c.substring(4, 6), 16);
+  // Relative luminance formula (https://www.w3.org/TR/WCAG20/)
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum > 140 ? '#111' : '#e0e0e0';
+}
 
 interface ComponentProps {
   component: ComponentType;
@@ -18,6 +39,28 @@ interface ComponentProps {
   connectedGroups?: Map<string, Array<Set<string>>>;
   zoom: number;
   opacity?: number;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────
+
+/** Detect component sub-type from definition ID for visual differentiation. */
+function getComponentSubtype(defId: string): string {
+  if (defId.includes('resistor')) return 'resistor';
+  if (defId === 'capacitor-rect') return 'capacitor-rect';
+  if (defId.includes('electrolytic') || defId === 'capacitor' || defId === 'capacitor-wide') return 'electrolytic';
+  if (defId.includes('inductor')) return 'inductor';
+  if (defId.includes('diode') || defId === 'zener-diode') return 'diode';
+  if (defId.includes('led-rgb')) return 'led-rgb';
+  if (defId.includes('led-bicolor')) return 'led-bicolor';
+  if (defId.includes('led')) return 'led';
+  if (defId.includes('transistor') || defId.includes('jfet') || defId.includes('mosfet-to92') || defId.includes('shunt-regulator')) return 'to92';
+  if (defId.includes('regulator') || defId.includes('mosfet-to220')) return 'to220';
+  if (defId.includes('trimpot-top')) return 'trimpot-top';
+  if (defId.includes('trimpot')) return 'trimpot';
+  if (defId.includes('button-tact')) return 'tact-switch';
+  if (defId.includes('encoder')) return 'encoder';
+  if (defId.includes('mcu-')) return 'mcu';
+  return '';
 }
 
 export const Component = memo(({
@@ -48,14 +91,26 @@ export const Component = memo(({
   const rMinCol = Math.min(...rotatedPins.map((p) => p.col));
   const rMaxCol = Math.max(...rotatedPins.map((p) => p.col));
 
-  const isIC = definition.footprint.type === 'DIP';
-  const isAxial = definition.footprint.type === 'Axial';
-  const isRadial = definition.footprint.type === 'Radial';
-  const isSIP = definition.footprint.type === 'SIP';
-  const isCustom = definition.footprint.type === 'Custom';
+  const fpType = definition.footprint.type;
+  const isIC = fpType === 'DIP';
+  const isAxial = fpType === 'Axial';
+  const isRadial = fpType === 'Radial';
+  const isSIP = fpType === 'SIP';
+  const isCustom = fpType === 'Custom';
+  const isTO92 = fpType === 'TO92';
+  const isTO220 = fpType === 'TO220';
+  const isTrimPot = fpType === 'TrimPot';
+  const isTrimPotTop = fpType === 'TrimPotTop';
+  const isTactSwitch = fpType === 'TactSwitch';
+
+  const subtype = getComponentSubtype(definition.id);
+
+  // User-customizable body color override
+  const customColor = component.color || null;
+  const customStroke = customColor ? darkenHex(customColor, 0.35) : null;
 
   // Body bounding box
-  const pad = isIC ? GP * 0.35 : GP * 0.3;
+  const pad = isIC ? GP * 0.35 : isTO220 ? GP * 0.45 : GP * 0.3;
   const bodyX = rMinCol * GP - pad;
   const bodyY = rMinRow * GP - pad;
   const bodyW = (rMaxCol - rMinCol) * GP + pad * 2;
@@ -64,12 +119,24 @@ export const Component = memo(({
   // Pin 1 rotated position (for the notch marker)
   const pin1 = rotatedPins[0];
 
-  // Is axial / SIP component horizontal or vertical?
+  // Is component horizontal or vertical?
   const isHoriz = rMinRow === rMaxRow;
 
-  // ─── Capacitor "+" marker position (rotation-aware) ─────
+  // ─── Resistor color bands (computed from value) ────────────
+  const resistorBands = useMemo(() => {
+    if (subtype !== 'resistor') return null;
+    return resistorValueToBands(component.value);
+  }, [subtype, component.value]);
+
+  // ─── LED color resolution ──────────────────────────────────
+  const ledColor = useMemo(() => {
+    if (subtype !== 'led' && subtype !== 'led-bicolor' && subtype !== 'led-rgb') return null;
+    return resolveLedColor(component.ledColor);
+  }, [subtype, component.ledColor]);
+
+  // ─── Electrolytic "+" marker position (rotation-aware) ─────
   const capPlusPos = (() => {
-    if (!isRadial || !definition.id.includes('capacitor')) return null;
+    if (subtype !== 'electrolytic') return null;
     const p0Row = rotatedPins[0].row;
     const p0Col = rotatedPins[0].col;
     const cRow = (rMinRow + rMaxRow) / 2;
@@ -83,9 +150,7 @@ export const Component = memo(({
     };
   })();
 
-  // ─── Net Highlighting (using pre-computed connectivity groups) ────────────────
-  // A pin highlights if it belongs to the highlighted net AND is in a connected
-  // group with other pins of the same net.
+  // ─── Net Highlighting ──────────────────────────────────────
   const highlightedPinNumbers = useMemo(() => {
     const result = new Set<string>();
     if (!highlightedNetId || !connectedGroups) return result;
@@ -93,15 +158,12 @@ export const Component = memo(({
     const myNetPins = component.pins.filter(p => p.netId === highlightedNetId);
     if (myNetPins.length === 0) return result;
 
-    // Get connected groups for this net
     const groups = connectedGroups.get(highlightedNetId) || [];
     if (groups.length === 0) {
-      // No connectivity info - highlight all pins
       myNetPins.forEach(p => result.add(p.number));
       return result;
     }
 
-    // For each pin, check if it's in any connected group
     for (const pin of myNetPins) {
       const pinKey = posKey(pin.position);
       for (const group of groups) {
@@ -117,9 +179,24 @@ export const Component = memo(({
 
   const hasHighlightedPin = highlightedPinNumbers.size > 0;
   const isDimmed = !!highlightedNetId && !hasHighlightedPin;
-  
-  // Calculate final opacity: use dimmed opacity if dimmed, otherwise use the component opacity
   const finalOpacity = isDimmed ? 0.2 : opacity;
+
+  // ─── Resistor upright detection ────────────────────────────
+  const isResistorUpright = subtype === 'resistor' && definition.id === 'resistor-upright';
+
+  // ─── Diode detection ──────────────────────────────────────
+  const isDiode = subtype === 'diode';
+  const isZener = definition.id === 'zener-diode' || definition.id === 'zener-diode-large';
+
+  // Center coordinates
+  const cX = ((rMinCol + rMaxCol) / 2) * GP;
+  const cY = ((rMinRow + rMaxRow) / 2) * GP;
+
+  // Radial body radius — circles should be large enough that pins are well inside
+  const radialRadius = (() => {
+    if (definition.id === 'electrolytic-large') return GP * 1.3;
+    return GP * 0.7;
+  })();
 
   return (
     <Group
@@ -133,15 +210,15 @@ export const Component = memo(({
           ═══════════════════════════════════════════════════════ */}
 
       {/* ─── IC (DIP) Body ──────────────────────────────────── */}
-      {isIC && (
+      {isIC && subtype !== 'mcu' && (
         <>
           <Rect
             x={bodyX}
             y={bodyY}
             width={bodyW}
             height={bodyH}
-            fill="#1a1a2e"
-            stroke={isSelected ? '#c8ff2e' : '#2a2a4e'}
+            fill={customColor || '#1a1a2e'}
+            stroke={isSelected ? '#c8ff2e' : customStroke || '#2a2a4e'}
             strokeWidth={isSelected ? 2.5 : 1.5}
             cornerRadius={3}
             shadowColor={showShadows ? "#000" : undefined}
@@ -157,152 +234,935 @@ export const Component = memo(({
             strokeWidth={1.5}
             fill="transparent"
           />
+          {/* Pin 1 stripe indicator (white dot + arc, offset into body) */}
+          <Circle
+            x={pin1.col * GP + (pin1.col === rMinCol ? pad * 2 : -pad * 2)}
+            y={pin1.row * GP + (pin1.row === rMinRow ? pad * 0.1 : -pad * 0.1
+              
+            )}
+            radius={pad * 0.35}
+            fill="#888"
+            listening={false}
+          />
+          <Arc
+            x={pin1.col * GP + (pin1.col === rMinCol ? pad * 2 : -pad * 2)}
+            y={pin1.row * GP + (pin1.row === rMinRow ? pad * 0.1 : -pad * 0.1)}
+            innerRadius={pad * 0.25}
+            outerRadius={pad * 0.4}
+            angle={180}
+            rotation={isHoriz ? (pin1.col === rMinCol ? 90 : 270) : (pin1.row === rMinRow ? 180 : 0)}
+            fill="#aaa"
+            listening={false}
+          />
         </>
       )}
 
-      {/* ─── Axial (Resistor) Body ──────────────────────────── */}
-      {isAxial && (
+      {/* ─── MCU Board Bodies ─────────────────────────────────── */}
+      {isIC && subtype === 'mcu' && (() => {
+        const mcuId = definition.id;
+        // Default PCB colors per board
+        const defaultPcbColor =
+          mcuId === 'mcu-arduino-nano' ? '#0a1a3a' :
+          mcuId === 'mcu-bluepill' ? '#0D47A1' :
+          mcuId === 'mcu-seeed-xiao' ? '#1a2a1a' :
+          '#D4A020'; // Daisy Seed (yellow/orange)
+        const defaultPcbStroke =
+          mcuId === 'mcu-arduino-nano' ? '#061228' :
+          mcuId === 'mcu-bluepill' ? '#082B6A' :
+          mcuId === 'mcu-seeed-xiao' ? '#0a1a0a' :
+          '#A07818';
+        
+        // Apply user override if set
+        const pcbColor = customColor || defaultPcbColor;
+        const pcbStroke = customStroke || defaultPcbStroke;
+        
+        // Determine text color based on pcb brightness
+        const textColor = getTextColor(pcbColor);
+        const chipColor = textColor === '#111' ? '#222' : '#111';
+
+        // USB connector position: pin 1 end
+        // Determine which edge of the body the USB is on
+        const pin1Row = pin1.row;
+        const pin1Col = pin1.col;
+        const isPin1Left = pin1Col === rMinCol;
+        const isPin1Top = pin1Row === rMinRow;
+        // For horizontal MCU: USB is on left (col min) or right (col max)
+        // For vertical MCU: USB is on top (row min) or bottom (row max)
+        const usbOnMinCol = pin1Col <= (rMinCol + rMaxCol) / 2;
+        const usbOnMinRow = pin1Row <= (rMinRow + rMaxRow) / 2;
+
+        // Board is vertical (taller than wide) or square
+        const isVert = bodyH >= bodyW;
+
+        // USB connector (top-down view): nearly square, ~40% of board width
+        const narrowSide = Math.min(bodyW, bodyH);
+        const usbAcross = narrowSide * 0.4;          // width across the board edge
+        const usbDepth = usbAcross * 0.75;           // depth ~75% of width (nearly square from top)
+        const usbW = isVert ? usbAcross : usbDepth;
+        const usbH = isVert ? usbDepth : usbAcross;
+        let usbX: number, usbY: number;
+
+        // USB always on pin-1 end, half embedded in board edge
+        if (isVert) {
+          usbX = cX - usbW / 2;
+          usbY = usbOnMinRow ? bodyY - usbH * 0.5 : bodyY + bodyH - usbH * 0.5;
+        } else {
+          usbY = cY - usbH / 2;
+          usbX = usbOnMinCol ? bodyX - usbW * 0.5 : bodyX + bodyW - usbW * 0.5;
+        }
+
+        // Processor chip: fills good portion of the board
+        const isNano = mcuId === 'mcu-arduino-nano';
+        // Nano chip is rotated 45deg so its diagonal must fit; others can be bigger
+        const chipSize = isNano
+          ? narrowSide * 0.35
+          : narrowSide * 0.5;
+
+        // Board label
+        const boardLabel =
+          mcuId === 'mcu-arduino-nano' ? 'NANO' :
+          mcuId === 'mcu-bluepill' ? 'STM32' :
+          mcuId === 'mcu-seeed-xiao' ? 'XIAO' :
+          'DAISY';
+
+        return (
+          <>
+            {/* PCB board */}
+            <Rect
+              x={bodyX}
+              y={bodyY}
+              width={bodyW}
+              height={bodyH}
+              fill={pcbColor}
+              stroke={isSelected ? '#c8ff2e' : pcbStroke}
+              strokeWidth={isSelected ? 2.5 : 1.5}
+              cornerRadius={2}
+              shadowColor={showShadows ? "#000" : undefined}
+              shadowBlur={showShadows ? 6 : 0}
+              shadowOpacity={showShadows ? 0.4 : 0}
+            />
+
+            {/* Processor chip (dark square in center, rotated 45deg for Nano) */}
+            <Rect
+              x={cX}
+              y={cY}
+              width={chipSize}
+              height={chipSize}
+              offsetX={chipSize / 2}
+              offsetY={chipSize / 2}
+              rotation={isNano ? 45 : 0}
+              fill={chipColor}
+              stroke={textColor === '#111' ? '#444' : '#333'}
+              strokeWidth={1}
+              cornerRadius={1}
+              listening={false}
+            />
+            {/* Chip dot (pin 1 indicator) */}
+            <Circle
+              x={cX}
+              y={cY - chipSize * (isNano ? 0.55 : 0.38)}
+              radius={2}
+              fill={textColor === '#111' ? '#555' : '#777'}
+              listening={false}
+            />
+
+            {/* USB connector — silver shell */}
+            <Rect
+              x={usbX}
+              y={usbY}
+              width={usbW}
+              height={usbH}
+              fill="#999"
+              stroke="#777"
+              strokeWidth={1.5}
+              cornerRadius={2}
+              listening={false}
+            />
+
+            {/* Board name label (centered in chip) */}
+            {showLabels && !isNano && (
+              <Text
+                x={cX - chipSize / 2}
+                y={cY - 4}
+                width={chipSize}
+                text={boardLabel}
+                fontSize={8}
+                fontFamily="monospace"
+                fill={textColor}
+                align="center"
+                fontStyle="bold"
+                listening={false}
+              />
+            )}
+            {/* Nano label centered in diamond chip */}
+            {showLabels && isNano && (
+              <Text
+                x={cX - chipSize / 2}
+                y={cY - 4}
+                width={chipSize}
+                text={boardLabel}
+                fontSize={8}
+                fontFamily="monospace"
+                fill={textColor}
+                align="center"
+                fontStyle="bold"
+                listening={false}
+              />
+            )}
+
+            {/* Pin 1 marker */}
+            <Circle
+              x={pin1.col * GP + (isPin1Left ? -pad * 0.15 : pad * 0.15)}
+              y={pin1.row * GP + (isPin1Top ? -pad * 0.15 : pad * 0.15)}
+              radius={2.5}
+              fill={textColor === '#111' ? '#999' : '#ccc'}
+              listening={false}
+            />
+          </>
+        );
+      })()}
+
+      {/* ─── Axial Body (Resistor / Diode / Capacitor-Rect) ─── */}
+      {isAxial && !isResistorUpright && subtype === 'resistor' && (
         <>
           {isHoriz ? (
             <>
               {/* Horizontal legs */}
               <Line
-                points={[
-                  rMinCol * GP, rMinRow * GP,
-                  (rMinCol + 0.6) * GP, rMinRow * GP,
-                ]}
+                points={[rMinCol * GP, rMinRow * GP, (rMinCol + 0.6) * GP, rMinRow * GP]}
                 stroke="#888"
                 strokeWidth={1.5}
                 listening={false}
               />
               <Line
-                points={[
-                  (rMaxCol - 0.6) * GP, rMinRow * GP,
-                  rMaxCol * GP, rMinRow * GP,
-                ]}
+                points={[(rMaxCol - 0.6) * GP, rMinRow * GP, rMaxCol * GP, rMinRow * GP]}
                 stroke="#888"
                 strokeWidth={1.5}
                 listening={false}
               />
-              {/* Horizontal body */}
+              {/* Blue 1% body */}
               <Rect
                 x={(rMinCol + 0.5) * GP}
                 y={rMinRow * GP - 5}
                 width={Math.max((rMaxCol - rMinCol - 1) * GP, GP * 0.3)}
                 height={10}
-                fill="#8B6914"
-                stroke={isSelected ? '#c8ff2e' : '#6B4914'}
+                fill={customColor || '#2a4a7a'}
+                stroke={isSelected ? '#c8ff2e' : customStroke || '#1a3a6a'}
                 strokeWidth={isSelected ? 2 : 1}
                 cornerRadius={2}
               />
-              {/* Color bands — horizontal */}
-              {[0.25, 0.4, 0.55, 0.75].map((t, i) => (
-                <Rect
-                  key={`band-${i}`}
-                  x={
-                    ((rMinCol + 0.5) + t * Math.max(rMaxCol - rMinCol - 1, 0.3)) * GP - 1
-                  }
-                  y={rMinRow * GP - 4}
-                  width={2}
-                  height={8}
-                  fill={['#994400', '#000', '#ff0000', '#d4a017'][i]}
-                  listening={false}
-                />
-              ))}
+              {/* 5-band color code — horizontal */}
+              {(resistorBands || ['#8B4513', '#000', '#000', '#000', '#8B4513']).map((color, i) => {
+                const bandPositions = [0.15, 0.3, 0.45, 0.65, 0.85];
+                const bodyLen = Math.max(rMaxCol - rMinCol - 1, 0.3);
+                return (
+                  <Rect
+                    key={`band-${i}`}
+                    x={((rMinCol + 0.5) + bandPositions[i] * bodyLen) * GP - 1}
+                    y={rMinRow * GP - 4}
+                    width={2}
+                    height={8}
+                    fill={color}
+                    listening={false}
+                  />
+                );
+              })}
             </>
           ) : (
             <>
               {/* Vertical legs */}
               <Line
-                points={[
-                  rMinCol * GP, rMinRow * GP,
-                  rMinCol * GP, (rMinRow + 0.6) * GP,
-                ]}
+                points={[rMinCol * GP, rMinRow * GP, rMinCol * GP, (rMinRow + 0.6) * GP]}
                 stroke="#888"
                 strokeWidth={1.5}
                 listening={false}
               />
               <Line
-                points={[
-                  rMinCol * GP, (rMaxRow - 0.6) * GP,
-                  rMinCol * GP, rMaxRow * GP,
-                ]}
+                points={[rMinCol * GP, (rMaxRow - 0.6) * GP, rMinCol * GP, rMaxRow * GP]}
                 stroke="#888"
                 strokeWidth={1.5}
                 listening={false}
               />
-              {/* Vertical body */}
+              {/* Blue 1% body — vertical */}
               <Rect
                 x={rMinCol * GP - 5}
                 y={(rMinRow + 0.5) * GP}
                 width={10}
                 height={Math.max((rMaxRow - rMinRow - 1) * GP, GP * 0.3)}
-                fill="#8B6914"
-                stroke={isSelected ? '#c8ff2e' : '#6B4914'}
+                fill={customColor || '#2a4a7a'}
+                stroke={isSelected ? '#c8ff2e' : customStroke || '#1a3a6a'}
                 strokeWidth={isSelected ? 2 : 1}
                 cornerRadius={2}
               />
-              {/* Color bands — vertical */}
-              {[0.25, 0.4, 0.55, 0.75].map((t, i) => (
-                <Rect
-                  key={`band-${i}`}
-                  x={rMinCol * GP - 4}
-                  y={
-                    ((rMinRow + 0.5) + t * Math.max(rMaxRow - rMinRow - 1, 0.3)) * GP - 1
-                  }
-                  width={8}
-                  height={2}
-                  fill={['#994400', '#000', '#ff0000', '#d4a017'][i]}
-                  listening={false}
-                />
-              ))}
+              {/* 5-band color code — vertical */}
+              {(resistorBands || ['#8B4513', '#000', '#000', '#000', '#8B4513']).map((color, i) => {
+                const bandPositions = [0.15, 0.3, 0.45, 0.65, 0.85];
+                const bodyLen = Math.max(rMaxRow - rMinRow - 1, 0.3);
+                return (
+                  <Rect
+                    key={`band-${i}`}
+                    x={rMinCol * GP - 4}
+                    y={((rMinRow + 0.5) + bandPositions[i] * bodyLen) * GP - 1}
+                    width={8}
+                    height={2}
+                    fill={color}
+                    listening={false}
+                  />
+                );
+              })}
             </>
           )}
         </>
       )}
 
-      {/* ─── Radial (Capacitor / LED) Body ──────────────────── */}
-      {isRadial && (
+      {/* ─── Resistor Upright ──────────────────────────────────── */}
+      {isAxial && isResistorUpright && (
+        <>
+          {/* Small cylindrical body between adjacent pins */}
+          <Circle
+            x={cX}
+            y={cY}
+            radius={GP * 0.3}
+            fill={customColor || '#2a4a7a'}
+            stroke={isSelected ? '#c8ff2e' : customStroke || '#1a3a6a'}
+            strokeWidth={isSelected ? 2 : 1}
+          />
+          {/* Top ring (1st band color or brown) */}
+          <Circle
+            x={cX}
+            y={cY}
+            radius={GP * 0.22}
+            fill="transparent"
+            stroke={resistorBands ? resistorBands[0] : '#8B4513'}
+            strokeWidth={2}
+            listening={false}
+          />
+        </>
+      )}
+
+      {/* ─── Diode Body (Axial) ────────────────────────────────── */}
+      {isAxial && isDiode && (
+        <>
+          {isHoriz ? (
+            <>
+              {/* Horizontal legs */}
+              <Line
+                points={[rMinCol * GP, rMinRow * GP, (rMinCol + 0.6) * GP, rMinRow * GP]}
+                stroke="#888"
+                strokeWidth={1.5}
+                listening={false}
+              />
+              <Line
+                points={[(rMaxCol - 0.6) * GP, rMinRow * GP, rMaxCol * GP, rMinRow * GP]}
+                stroke="#888"
+                strokeWidth={1.5}
+                listening={false}
+              />
+              {/* Light grey diode body */}
+              <Rect
+                x={(rMinCol + 0.5) * GP}
+                y={rMinRow * GP - 5}
+                width={Math.max((rMaxCol - rMinCol - 1) * GP, GP * 0.3)}
+                height={10}
+                fill={customColor || (isZener ? '#5a5a6a' : '#8a8a9a')}
+                stroke={isSelected ? '#c8ff2e' : customStroke || '#6a6a7a'}
+                strokeWidth={isSelected ? 2 : 1}
+                cornerRadius={1}
+              />
+              {/* Cathode band at pin 2 end */}
+              <Rect
+                x={(rMaxCol - 0.6) * GP - 2}
+                y={rMinRow * GP - 5}
+                width={3}
+                height={10}
+                fill={isZener ? '#808080' : '#333333'}
+                listening={false}
+              />
+              {/* Zener extra mark */}
+              {isZener && (
+                <Rect
+                  x={(rMaxCol - 0.6) * GP - 5}
+                  y={rMinRow * GP - 5}
+                  width={2}
+                  height={10}
+                  fill="#808080"
+                  listening={false}
+                />
+              )}
+            </>
+          ) : (
+            <>
+              {/* Vertical legs */}
+              <Line
+                points={[rMinCol * GP, rMinRow * GP, rMinCol * GP, (rMinRow + 0.6) * GP]}
+                stroke="#888"
+                strokeWidth={1.5}
+                listening={false}
+              />
+              <Line
+                points={[rMinCol * GP, (rMaxRow - 0.6) * GP, rMinCol * GP, rMaxRow * GP]}
+                stroke="#888"
+                strokeWidth={1.5}
+                listening={false}
+              />
+              {/* Light grey diode body — vertical */}
+              <Rect
+                x={rMinCol * GP - 5}
+                y={(rMinRow + 0.5) * GP}
+                width={10}
+                height={Math.max((rMaxRow - rMinRow - 1) * GP, GP * 0.3)}
+                fill={customColor || (isZener ? '#5a5a6a' : '#8a8a9a')}
+                stroke={isSelected ? '#c8ff2e' : customStroke || '#6a6a7a'}
+                strokeWidth={isSelected ? 2 : 1}
+                cornerRadius={1}
+              />
+              {/* Cathode band at pin 2 end */}
+              <Rect
+                x={rMinCol * GP - 5}
+                y={(rMaxRow - 0.6) * GP - 2}
+                width={10}
+                height={3}
+                fill={isZener ? '#808080' : '#333333'}
+                listening={false}
+              />
+              {isZener && (
+                <Rect
+                  x={rMinCol * GP - 5}
+                  y={(rMaxRow - 0.6) * GP - 5}
+                  width={10}
+                  height={2}
+                  fill="#808080"
+                  listening={false}
+                />
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {/* ─── Capacitor Rect (Film/Ceramic, Non-Polarized) ──────── */}
+      {isAxial && subtype === 'capacitor-rect' && (
+        <>
+          {isHoriz ? (
+            <>
+              <Line
+                points={[rMinCol * GP, rMinRow * GP, (rMinCol + 0.4) * GP, rMinRow * GP]}
+                stroke="#888"
+                strokeWidth={1.5}
+                listening={false}
+              />
+              <Line
+                points={[(rMaxCol - 0.4) * GP, rMinRow * GP, rMaxCol * GP, rMinRow * GP]}
+                stroke="#888"
+                strokeWidth={1.5}
+                listening={false}
+              />
+              <Rect
+                x={(rMinCol + 0.35) * GP}
+                y={rMinRow * GP - 7}
+                width={Math.max((rMaxCol - rMinCol - 0.7) * GP, GP * 0.4)}
+                height={14}
+                fill="#b8860b"
+                stroke={isSelected ? '#c8ff2e' : '#8B6914'}
+                strokeWidth={isSelected ? 2 : 1}
+                cornerRadius={1}
+              />
+              {/* "104" style marking */}
+              {showLabels && component.value && (
+                <Text
+                  x={(rMinCol + 0.35) * GP}
+                  y={rMinRow * GP - 4}
+                  width={Math.max((rMaxCol - rMinCol - 0.7) * GP, GP * 0.4)}
+                  text={component.value}
+                  fontSize={6}
+                  fontFamily="monospace"
+                  fill="#3a2a00"
+                  align="center"
+                  listening={false}
+                />
+              )}
+            </>
+          ) : (
+            <>
+              <Line
+                points={[rMinCol * GP, rMinRow * GP, rMinCol * GP, (rMinRow + 0.4) * GP]}
+                stroke="#888"
+                strokeWidth={1.5}
+                listening={false}
+              />
+              <Line
+                points={[rMinCol * GP, (rMaxRow - 0.4) * GP, rMinCol * GP, rMaxRow * GP]}
+                stroke="#888"
+                strokeWidth={1.5}
+                listening={false}
+              />
+              <Rect
+                x={rMinCol * GP - 7}
+                y={(rMinRow + 0.35) * GP}
+                width={14}
+                height={Math.max((rMaxRow - rMinRow - 0.7) * GP, GP * 0.4)}
+                fill="#b8860b"
+                stroke={isSelected ? '#c8ff2e' : '#8B6914'}
+                strokeWidth={isSelected ? 2 : 1}
+                cornerRadius={1}
+              />
+            </>
+          )}
+        </>
+      )}
+
+      {/* ─── Radial Electrolytic Capacitor ─────────────────────── */}
+      {isRadial && subtype === 'electrolytic' && (
         <>
           <Circle
-            x={((rMinCol + rMaxCol) / 2) * GP}
-            y={((rMinRow + rMaxRow) / 2) * GP}
-            radius={GP * 0.42}
-            fill={definition.id.includes('led') ? '#dc2626' : '#1e40af'}
-            stroke={
-              isSelected
-                ? '#c8ff2e'
-                : definition.id.includes('led')
-                ? '#991b1b'
-                : '#1e3a8a'
-            }
+            x={cX}
+            y={cY}
+            radius={radialRadius}
+            fill={customColor || '#1e40af'}
+            stroke={isSelected ? '#c8ff2e' : customStroke || '#1e3a8a'}
             strokeWidth={isSelected ? 2 : 1.5}
             shadowColor={showShadows ? "#000" : undefined}
             shadowBlur={showShadows ? 4 : 0}
             shadowOpacity={showShadows ? 0.3 : 0}
           />
-          {definition.id.includes('led') && (
-            <Circle
-              x={((rMinCol + rMaxCol) / 2) * GP}
-              y={((rMinRow + rMaxRow) / 2) * GP}
-              radius={GP * 0.25}
-              fill="#ff6666"
-              opacity={0.5}
-              listening={false}
-            />
+          {/* Stripe on negative side */}
+          <Arc
+            x={cX}
+            y={cY}
+            innerRadius={radialRadius - 3}
+            outerRadius={radialRadius}
+            angle={120}
+            rotation={isHoriz ? 120 : 30}
+            fill="#4a6aaa"
+            listening={false}
+          />
+        </>
+      )}
+
+      {/* ─── LED (standard 2-pin) ──────────────────────────────── */}
+      {isRadial && subtype === 'led' && ledColor && (
+        <>
+          <Circle
+            x={cX}
+            y={cY}
+            radius={GP * 0.42}
+            fill={ledColor.fill}
+            stroke={isSelected ? '#c8ff2e' : darkenHex(ledColor.fill, 0.4)}
+            strokeWidth={isSelected ? 2 : 1.5}
+            shadowColor={showShadows ? ledColor.glow : undefined}
+            shadowBlur={showShadows ? 6 : 0}
+            shadowOpacity={showShadows ? 0.5 : 0}
+          />
+          <Circle
+            x={cX}
+            y={cY}
+            radius={GP * 0.25}
+            fill={ledColor.glow}
+            opacity={0.4}
+            listening={false}
+          />
+        </>
+      )}
+
+      {/* ─── LED Bi-Color (3-pin) ──────────────────────────────── */}
+      {isRadial && subtype === 'led-bicolor' && (
+        <>
+          <Circle
+            x={cX}
+            y={cY}
+            radius={GP * 0.48}
+            fill="#333"
+            stroke={isSelected ? '#c8ff2e' : '#555'}
+            strokeWidth={isSelected ? 2 : 1.5}
+          />
+          {/* Two halves */}
+          <Arc
+            x={cX}
+            y={cY}
+            innerRadius={0}
+            outerRadius={GP * 0.35}
+            angle={180}
+            rotation={isHoriz ? 0 : 270}
+            fill="#dc2626"
+            listening={false}
+          />
+          <Arc
+            x={cX}
+            y={cY}
+            innerRadius={0}
+            outerRadius={GP * 0.35}
+            angle={180}
+            rotation={isHoriz ? 180 : 90}
+            fill="#16a34a"
+            listening={false}
+          />
+        </>
+      )}
+
+      {/* ─── LED RGB (4-pin) ───────────────────────────────────── */}
+      {isRadial && subtype === 'led-rgb' && (
+        <>
+          <Circle
+            x={cX}
+            y={cY}
+            radius={GP * 0.55}
+            fill="#222"
+            stroke={isSelected ? '#c8ff2e' : '#555'}
+            strokeWidth={isSelected ? 2 : 1.5}
+          />
+          {/* RGB segments */}
+          <Arc
+            x={cX}
+            y={cY}
+            innerRadius={0}
+            outerRadius={GP * 0.38}
+            angle={120}
+            rotation={0}
+            fill="#dc2626"
+            opacity={0.7}
+            listening={false}
+          />
+          <Arc
+            x={cX}
+            y={cY}
+            innerRadius={0}
+            outerRadius={GP * 0.38}
+            angle={120}
+            rotation={120}
+            fill="#16a34a"
+            opacity={0.7}
+            listening={false}
+          />
+          <Arc
+            x={cX}
+            y={cY}
+            innerRadius={0}
+            outerRadius={GP * 0.38}
+            angle={120}
+            rotation={240}
+            fill="#2563eb"
+            opacity={0.7}
+            listening={false}
+          />
+        </>
+      )}
+
+      {/* ─── Inductor (Radial) ─────────────────────────────────── */}
+      {isRadial && subtype === 'inductor' && (
+        <>
+          <Circle
+            x={cX}
+            y={cY}
+            radius={GP * 0.7}
+            fill={customColor || '#2d4a2d'}
+            stroke={isSelected ? '#c8ff2e' : customStroke || '#1a3a1a'}
+            strokeWidth={isSelected ? 2 : 1.5}
+            shadowColor={showShadows ? "#000" : undefined}
+            shadowBlur={showShadows ? 4 : 0}
+            shadowOpacity={showShadows ? 0.3 : 0}
+          />
+          {/* Toroid-style inner ring */}
+          <Circle
+            x={cX}
+            y={cY}
+            radius={GP * 0.42}
+            fill="transparent"
+            stroke="#5a8a5a"
+            strokeWidth={2}
+            listening={false}
+          />
+          {/* Wire wrapping lines */}
+          {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((angle) => {
+            const rad = (angle * Math.PI) / 180;
+            const r1 = GP * 0.35;
+            const r2 = GP * 0.6;
+            return (
+              <Line
+                key={`coil-${angle}`}
+                points={[
+                  cX + Math.cos(rad) * r1,
+                  cY + Math.sin(rad) * r1,
+                  cX + Math.cos(rad) * r2,
+                  cY + Math.sin(rad) * r2,
+                ]}
+                stroke="#7aaa7a"
+                strokeWidth={1}
+                listening={false}
+              />
+            );
+          })}
+        </>
+      )}
+
+      {/* ─── TO-92 (D-shaped: Transistors, JFETs, MOSFETs) ──── */}
+      {isTO92 && (() => {
+        // Compact D-shape centered on middle pin, smaller than pin span
+        const to92W = isHoriz ? GP * 1.3 : GP * 0.8;
+        const to92H = isHoriz ? GP * 0.8 : GP * 1.3;
+        const to92X = cX - to92W / 2;
+        const to92Y = cY - to92H / 2;
+        const flatR = 0;
+        const roundR = isHoriz ? to92W * 0.45 : to92H * 0.45;
+        return (
+          <>
+            {isHoriz ? (
+              <>
+                <Rect
+                  x={to92X}
+                  y={to92Y}
+                  width={to92W}
+                  height={to92H}
+                  fill={customColor || '#2a2a2a'}
+                  stroke={isSelected ? '#c8ff2e' : customStroke || '#5a5a5a'}
+                  strokeWidth={isSelected ? 2 : 1.5}
+                  cornerRadius={[flatR, flatR, roundR, roundR]}
+                  shadowColor={showShadows ? "#000" : undefined}
+                  shadowBlur={showShadows ? 4 : 0}
+                  shadowOpacity={showShadows ? 0.3 : 0}
+                />
+                {/* Flat face indicator line */}
+                <Line
+                  points={[to92X, to92Y, to92X + to92W, to92Y]}
+                  stroke={isSelected ? '#c8ff2e' : '#777'}
+                  strokeWidth={2}
+                  listening={false}
+                />
+              </>
+            ) : (
+              <>
+                <Rect
+                  x={to92X}
+                  y={to92Y}
+                  width={to92W}
+                  height={to92H}
+                  fill={customColor || '#2a2a2a'}
+                  stroke={isSelected ? '#c8ff2e' : customStroke || '#5a5a5a'}
+                  strokeWidth={isSelected ? 2 : 1.5}
+                  cornerRadius={[flatR, roundR, roundR, flatR]}
+                  shadowColor={showShadows ? "#000" : undefined}
+                  shadowBlur={showShadows ? 4 : 0}
+                  shadowOpacity={showShadows ? 0.3 : 0}
+                />
+                {/* Flat face indicator line */}
+                <Line
+                  points={[to92X, to92Y, to92X, to92Y + to92H]}
+                  stroke={isSelected ? '#c8ff2e' : '#777'}
+                  strokeWidth={2}
+                  listening={false}
+                />
+              </>
+            )}
+          </>
+        );
+      })()}
+
+      {/* ─── TO-220 (Regulator / Power MOSFET) ─────────────────── */}
+      {isTO220 && (
+        <>
+          {isHoriz ? (
+            <>
+              {/* Main body */}
+              <Rect
+                x={bodyX}
+                y={bodyY}
+                width={bodyW}
+                height={bodyH}
+                fill={customColor || '#1a1a1a'}
+                stroke={isSelected ? '#c8ff2e' : customStroke || '#4a4a4a'}
+                strokeWidth={isSelected ? 2.5 : 1.5}
+                cornerRadius={2}
+                shadowColor={showShadows ? "#000" : undefined}
+                shadowBlur={showShadows ? 6 : 0}
+                shadowOpacity={showShadows ? 0.4 : 0}
+              />
+              {/* Metal tab */}
+              <Rect
+                x={bodyX + 2}
+                y={bodyY - 4}
+                width={bodyW - 4}
+                height={6}
+                fill="#888"
+                stroke="#666"
+                strokeWidth={1}
+                cornerRadius={[2, 2, 0, 0]}
+                listening={false}
+              />
+              {/* Tab hole */}
+              <Circle
+                x={cX}
+                y={bodyY - 1}
+                radius={2}
+                fill="#444"
+                stroke="#666"
+                strokeWidth={0.5}
+                listening={false}
+              />
+            </>
+          ) : (
+            <>
+              {/* Main body — vertical */}
+              <Rect
+                x={bodyX}
+                y={bodyY}
+                width={bodyW}
+                height={bodyH}
+                fill={customColor || '#1a1a1a'}
+                stroke={isSelected ? '#c8ff2e' : customStroke || '#4a4a4a'}
+                strokeWidth={isSelected ? 2.5 : 1.5}
+                cornerRadius={2}
+                shadowColor={showShadows ? "#000" : undefined}
+                shadowBlur={showShadows ? 6 : 0}
+                shadowOpacity={showShadows ? 0.4 : 0}
+              />
+              {/* Metal tab — left side */}
+              <Rect
+                x={bodyX - 4}
+                y={bodyY + 2}
+                width={6}
+                height={bodyH - 4}
+                fill="#888"
+                stroke="#666"
+                strokeWidth={1}
+                cornerRadius={[2, 0, 0, 2]}
+                listening={false}
+              />
+              <Circle
+                x={bodyX - 1}
+                y={cY}
+                radius={2}
+                fill="#444"
+                stroke="#666"
+                strokeWidth={0.5}
+                listening={false}
+              />
+            </>
           )}
         </>
       )}
 
-      {/* ─── SIP (Header / Transistor) Body ─────────────────── */}
+      {/* ─── TrimPot (Side Adjust — inline) ────────────────────── */}
+      {isTrimPot && (
+        <>
+          <Rect
+            x={bodyX}
+            y={bodyY}
+            width={bodyW}
+            height={bodyH}
+            fill={customColor || '#1a3a6a'}
+            stroke={isSelected ? '#c8ff2e' : customStroke || '#2a5a8a'}
+            strokeWidth={isSelected ? 2 : 1.5}
+            cornerRadius={2}
+            shadowColor={showShadows ? "#000" : undefined}
+            shadowBlur={showShadows ? 4 : 0}
+            shadowOpacity={showShadows ? 0.3 : 0}
+          />
+          {/* Brass screw head */}
+          <Circle
+            x={cX}
+            y={cY}
+            radius={GP * 0.25}
+            fill="#b8860b"
+            stroke="#8B6914"
+            strokeWidth={1}
+          />
+          {/* Screw slot */}
+          <Line
+            points={[cX - GP * 0.15, cY, cX + GP * 0.15, cY]}
+            stroke="#6B4914"
+            strokeWidth={2}
+            listening={false}
+          />
+        </>
+      )}
+
+      {/* ─── TrimPot Top (Top Adjust — triangular pins) ────────── */}
+      {isTrimPotTop && (
+        <>
+          <Rect
+            x={bodyX}
+            y={bodyY}
+            width={bodyW}
+            height={bodyH}
+            fill={customColor || '#1a3a6a'}
+            stroke={isSelected ? '#c8ff2e' : customStroke || '#2a5a8a'}
+            strokeWidth={isSelected ? 2 : 1.5}
+            cornerRadius={2}
+            shadowColor={showShadows ? "#000" : undefined}
+            shadowBlur={showShadows ? 4 : 0}
+            shadowOpacity={showShadows ? 0.3 : 0}
+          />
+          {/* Brass screw head (larger, centered) */}
+          <Circle
+            x={cX}
+            y={cY}
+            radius={GP * 0.35}
+            fill="#b8860b"
+            stroke="#8B6914"
+            strokeWidth={1.5}
+          />
+          {/* Cross slot */}
+          <Line
+            points={[cX - GP * 0.2, cY, cX + GP * 0.2, cY]}
+            stroke="#6B4914"
+            strokeWidth={2}
+            listening={false}
+          />
+          <Line
+            points={[cX, cY - GP * 0.2, cX, cY + GP * 0.2]}
+            stroke="#6B4914"
+            strokeWidth={2}
+            listening={false}
+          />
+        </>
+      )}
+
+      {/* ─── Tact Switch ───────────────────────────────────────── */}
+      {isTactSwitch && (
+        <>
+          {/* Outer body */}
+          <Rect
+            x={bodyX}
+            y={bodyY}
+            width={bodyW}
+            height={bodyH}
+            fill={customColor || '#1a1a1a'}
+            stroke={isSelected ? '#c8ff2e' : customStroke || '#4a4a4a'}
+            strokeWidth={isSelected ? 2 : 1.5}
+            cornerRadius={2}
+          />
+          {/* Button circle */}
+          <Circle
+            x={cX}
+            y={cY}
+            radius={Math.min(bodyW, bodyH) * 0.28}
+            fill="#555"
+            stroke="#777"
+            strokeWidth={1.5}
+          />
+          {/* Button highlight */}
+          <Circle
+            x={cX}
+            y={cY}
+            radius={Math.min(bodyW, bodyH) * 0.18}
+            fill="#666"
+            listening={false}
+          />
+        </>
+      )}
+
+      {/* ─── SIP (Header / Potentiometer / Switch / Encoder) ──── */}
       {isSIP && (
         <Rect
           x={bodyX}
           y={bodyY}
           width={bodyW}
           height={bodyH}
-          fill={definition.id.includes('transistor') ? '#333' : '#2a2a2a'}
-          stroke={isSelected ? '#c8ff2e' : '#555'}
+          fill={customColor || (
+            subtype === 'encoder' ? '#1a2a3a'
+            : definition.id.includes('switch') || definition.id.includes('button') ? '#1a1a2a'
+            : '#2a2a2a'
+          )}
+          stroke={isSelected ? '#c8ff2e' : customStroke || '#555'}
           strokeWidth={isSelected ? 2 : 1}
           cornerRadius={2}
         />
@@ -325,7 +1185,6 @@ export const Component = memo(({
             shadowBlur={showShadows ? 4 : 0}
             shadowOpacity={showShadows ? 0.3 : 0}
           />
-          {/* "?" indicator to show it's a generic/configurable component */}
           <Text
             x={bodyX + bodyW - 12}
             y={bodyY + 2}
@@ -372,8 +1231,8 @@ export const Component = memo(({
           LAYER 3 — Text labels (always rendered on top)
           ═══════════════════════════════════════════════════════ */}
 
-      {/* ─── IC text ────────────────────────────────────────── */}
-      {isIC && showRefs && showLabels && (
+      {/* ─── IC / MCU text ───────────────────────────────────── */}
+      {isIC && subtype !== 'mcu' && showRefs && showLabels && (
         <Text
           x={bodyX}
           y={bodyY + bodyH / 2 - (showValues && component.value ? 9 : 5)}
@@ -387,7 +1246,7 @@ export const Component = memo(({
           listening={false}
         />
       )}
-      {isIC && showValues && showLabels && component.value && (
+      {isIC && subtype !== 'mcu' && showValues && showLabels && component.value && (
         <Text
           x={bodyX}
           y={bodyY + bodyH / 2 + (showRefs ? 3 : -5)}
@@ -400,9 +1259,24 @@ export const Component = memo(({
           listening={false}
         />
       )}
+      {/* MCU reference text (above the board) */}
+      {isIC && subtype === 'mcu' && showRefs && showLabels && (
+        <Text
+          x={bodyX}
+          y={bodyY - 12}
+          width={bodyW}
+          text={component.reference}
+          fontSize={9}
+          fontFamily="monospace"
+          fill="#111"
+          align="center"
+          fontStyle="bold"
+          listening={false}
+        />
+      )}
 
-      {/* ─── Axial (Resistor) text ──────────────────────────── */}
-      {isAxial && showRefs && showLabels && (
+      {/* ─── Axial (Resistor / Diode) text ──────────────────── */}
+      {isAxial && !isResistorUpright && showRefs && showLabels && (
         <Text
           x={isHoriz ? bodyX : rMinCol * GP + 9}
           y={
@@ -421,7 +1295,7 @@ export const Component = memo(({
           listening={false}
         />
       )}
-      {isAxial && showValues && showLabels && component.value && (
+      {isAxial && !isResistorUpright && showValues && showLabels && component.value && subtype !== 'capacitor-rect' && (
         <Text
           x={isHoriz ? bodyX : rMinCol * GP + 9}
           y={
@@ -439,7 +1313,23 @@ export const Component = memo(({
         />
       )}
 
-      {/* ─── Radial "+" marker ──────────────────────────────── */}
+      {/* ─── Resistor upright text ───────────────────────────── */}
+      {isResistorUpright && showRefs && showLabels && (
+        <Text
+          x={cX - 15}
+          y={cY + GP * 0.35}
+          width={30}
+          text={component.reference}
+          fontSize={8}
+          fontFamily="monospace"
+          fill="#ccc"
+          align="center"
+          fontStyle="bold"
+          listening={false}
+        />
+      )}
+
+      {/* ─── Electrolytic "+" marker ─────────────────────────── */}
       {capPlusPos && (
         <Text
           x={capPlusPos.x}
@@ -455,13 +1345,13 @@ export const Component = memo(({
       {/* ─── Radial text (centered inside body) ────────────── */}
       {isRadial && showRefs && showLabels && (
         <Text
-          x={((rMinCol + rMaxCol) / 2) * GP - 20}
-          y={((rMinRow + rMaxRow) / 2) * GP - (showValues && component.value ? 7 : 5)}
+          x={cX - 20}
+          y={cY - (showValues && component.value ? 7 : 5)}
           width={40}
           text={component.reference}
           fontSize={9}
           fontFamily="monospace"
-          fill="#e0e0e0"
+          fill={customColor ? getTextColor(customColor) : '#e0e0e0'}
           align="center"
           fontStyle="bold"
           listening={false}
@@ -469,14 +1359,125 @@ export const Component = memo(({
       )}
       {isRadial && showValues && showLabels && component.value && (
         <Text
-          x={((rMinCol + rMaxCol) / 2) * GP - 20}
-          y={((rMinRow + rMaxRow) / 2) * GP + (showRefs ? 2 : -5)}
+          x={cX - 20}
+          y={cY + (showRefs ? 2 : -5)}
           width={40}
           text={component.value}
           fontSize={8}
           fontFamily="monospace"
           fill="#a78bfa"
           align="center"
+          listening={false}
+        />
+      )}
+
+      {/* ─── TO-92 text ─────────────────────────────────────── */}
+      {isTO92 && showRefs && showLabels && (
+        <Text
+          x={isHoriz ? cX - GP * 0.65 : cX + GP * 0.5}
+          y={
+            isHoriz
+              ? cY - GP * 0.4 - (showValues && component.value ? 9 : 5)
+              : cY - (showValues && component.value ? 9 : 4)
+          }
+          width={isHoriz ? GP * 1.3 : undefined}
+          text={component.reference}
+          fontSize={9}
+          fontFamily="monospace"
+          fill={customColor ? getTextColor(customColor) : '#ccc'}
+          align={isHoriz ? 'center' : undefined}
+          fontStyle="bold"
+          listening={false}
+        />
+      )}
+      {isTO92 && showValues && showLabels && component.value && (
+        <Text
+          x={isHoriz ? cX - GP * 0.65 : cX + GP * 0.5}
+          y={
+            isHoriz
+              ? cY + GP * 0.4 + (showRefs ? 0 : -5)
+              : cY + (showRefs ? 2 : -4)
+          }
+          width={isHoriz ? GP * 1.3 : undefined}
+          text={component.value}
+          fontSize={8}
+          fontFamily="monospace"
+          fill="#a78bfa"
+          align={isHoriz ? 'center' : undefined}
+          listening={false}
+        />
+      )}
+
+      {/* ─── TO-220 text ────────────────────────────────────── */}
+      {isTO220 && showRefs && showLabels && (
+        <Text
+          x={bodyX}
+          y={bodyY + bodyH / 2 - (showValues && component.value ? 9 : 5)}
+          width={bodyW}
+          text={component.reference}
+          fontSize={9}
+          fontFamily="monospace"
+          fill={customColor ? getTextColor(customColor) : '#aaa'}
+          align="center"
+          fontStyle="bold"
+          listening={false}
+        />
+      )}
+      {isTO220 && showValues && showLabels && component.value && (
+        <Text
+          x={bodyX}
+          y={bodyY + bodyH / 2 + (showRefs ? 3 : -5)}
+          width={bodyW}
+          text={component.value}
+          fontSize={8}
+          fontFamily="monospace"
+          fill="#a78bfa"
+          align="center"
+          listening={false}
+        />
+      )}
+
+      {/* ─── TrimPot / TrimPotTop text ──────────────────────── */}
+      {(isTrimPot || isTrimPotTop) && showRefs && showLabels && (
+        <Text
+          x={bodyX}
+          y={bodyY - 12}
+          width={bodyW}
+          text={component.reference}
+          fontSize={8}
+          fontFamily="monospace"
+          fill="#6aacff"
+          align="center"
+          fontStyle="bold"
+          listening={false}
+        />
+      )}
+      {(isTrimPot || isTrimPotTop) && showValues && showLabels && component.value && (
+        <Text
+          x={bodyX}
+          y={bodyY + bodyH + 2}
+          width={bodyW}
+          text={component.value}
+          fontSize={7}
+          fontFamily="monospace"
+          fill="#a78bfa"
+          align="center"
+          listening={false}
+        />
+      )}
+
+      {/* ─── Tact Switch text ───────────────────────────────── */}
+      {isTactSwitch && showRefs && showLabels && (
+        <Text
+          x={bodyX}
+          y={bodyY + bodyH / 2 - 5}
+          width={bodyW}
+          text={component.reference}
+          fontSize={8}
+          fontFamily="monospace"
+          fill="#999"
+          align="center"
+          fontStyle="bold"
           listening={false}
         />
       )}
@@ -488,14 +1489,13 @@ export const Component = memo(({
           y={
             isHoriz
               ? bodyY + bodyH / 2 - (showValues && component.value ? 9 : 5)
-              : ((rMinRow + rMaxRow) / 2) * GP -
-                (showValues && component.value ? 9 : 4)
+              : cY - (showValues && component.value ? 9 : 4)
           }
           width={isHoriz ? bodyW : undefined}
           text={component.reference}
           fontSize={9}
           fontFamily="monospace"
-          fill="#aaa"
+          fill={customColor ? getTextColor(customColor) : '#aaa'}
           align={isHoriz ? 'center' : undefined}
           fontStyle="bold"
           listening={false}
@@ -507,7 +1507,7 @@ export const Component = memo(({
           y={
             isHoriz
               ? bodyY + bodyH / 2 + (showRefs ? 3 : -5)
-              : ((rMinRow + rMaxRow) / 2) * GP + (showRefs ? 2 : -4)
+              : cY + (showRefs ? 2 : -4)
           }
           width={isHoriz ? bodyW : undefined}
           text={component.value}
@@ -569,12 +1569,12 @@ export const Component = memo(({
                 listening={false}
               />
             )}
-            {showRefs && !isIC && pinDef.name && (
+            {showRefs && !isIC && !isCustom && pinDef.name && (
               <Text
                 x={rp.col * GP - PIN_R}
                 y={rp.row * GP - 3.5}
                 width={PIN_R * 2}
-                text={pinDef.name}
+                text={pinDef.name.charAt(0)}
                 fontSize={7}
                 fontFamily="monospace"
                 fill={isPinHighlighted ? '#fff' : '#111'}

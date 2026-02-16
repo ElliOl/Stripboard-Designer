@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Minus, Trash2, RotateCcw } from 'lucide-react';
+import { X, Plus, Minus, Trash2, RotateCcw, Palette } from 'lucide-react';
 import { useStripboardStore } from '@/store/stripboard';
 import {
   createDefinitionFromPlacements,
@@ -12,7 +12,8 @@ interface EditComponentDialogProps {
   onClose: () => void;
 }
 
-type FootprintTypeOption = 'DIP' | 'SIP' | 'Axial' | 'Radial' | 'Custom';
+import type { FootprintTypeName } from '@/lib/types';
+type FootprintTypeOption = FootprintTypeName;
 
 // ─── Grid Cell Size ─────────────────────────────────────────
 const CELL = 28;
@@ -39,8 +40,9 @@ export const EditComponentDialog = ({
   // ─── Form State ──────────────────────────────────────────
   const [reference, setReference] = useState(component?.reference ?? '');
   const [value, setValue] = useState(component?.value ?? '');
+  const [bodyColor, setBodyColor] = useState(component?.color ?? '');
   const [footprintType, setFootprintType] = useState<FootprintTypeOption>(
-    definition?.footprint.type ?? 'Custom'
+    (definition?.footprint.type ?? 'Custom') as FootprintTypeOption
   );
 
   // ─── Grid Editor State ───────────────────────────────────
@@ -240,16 +242,38 @@ export const EditComponentDialog = ({
 
     saveToHistory();
 
-    // Create a new definition from the visual pin placements
-    const newDef = createDefinitionFromPlacements(footprintType, pinPlacements);
+    // Check if pin layout has changed
+    const pinsChanged =
+      pinPlacements.length !== definition.pins.length ||
+      pinPlacements.some((pp, i) => {
+        const dp = definition.pins[i];
+        return (
+          pp.number !== dp.number ||
+          pp.name !== (dp.name ?? '') ||
+          pp.row !== dp.position.row ||
+          pp.col !== dp.position.col
+        );
+      });
 
-    // Register the new definition if needed
-    if (!componentDefinitions.some((d) => d.id === newDef.id)) {
-      addComponentDefinition(newDef);
+    let defIdToUse = definition.id;
+
+    // Only create new generic definition if pins actually changed
+    if (pinsChanged) {
+      const newDef = createDefinitionFromPlacements(footprintType, pinPlacements);
+      // Register the new definition if needed
+      if (!componentDefinitions.some((d) => d.id === newDef.id)) {
+        addComponentDefinition(newDef);
+      }
+      defIdToUse = newDef.id;
     }
 
-    // Rebuild component pins, preserving net assignments where pin numbers match
-    const newPins = newDef.pins.map((pDef) => {
+    // Rebuild component pins from the target definition
+    const targetDef = pinsChanged
+      ? componentDefinitions.find((d) => d.id === defIdToUse) ||
+        createDefinitionFromPlacements(footprintType, pinPlacements)
+      : definition;
+
+    const newPins = targetDef.pins.map((pDef) => {
       const oldPin = component.pins.find((p) => p.number === pDef.number);
       return {
         number: pDef.number,
@@ -265,8 +289,9 @@ export const EditComponentDialog = ({
     updateComponent(componentId, {
       reference,
       value: value || undefined,
-      definitionId: newDef.id,
+      definitionId: defIdToUse,
       pins: newPins,
+      color: bodyColor || undefined,
     });
 
     onClose();
@@ -277,6 +302,7 @@ export const EditComponentDialog = ({
     footprintType,
     reference,
     value,
+    bodyColor,
     componentId,
     componentDefinitions,
     saveToHistory,
@@ -368,7 +394,48 @@ export const EditComponentDialog = ({
                 <option value="DIP">DIP</option>
                 <option value="Axial">Axial</option>
                 <option value="Radial">Radial</option>
+                <option value="TO92">TO-92</option>
+                <option value="TO220">TO-220</option>
+                <option value="TrimPot">TrimPot</option>
+                <option value="TrimPotTop">TrimPot Top</option>
+                <option value="TactSwitch">Tact Switch</option>
               </select>
+            </div>
+          </div>
+
+          {/* ─── Body Color ─────────────────────────────── */}
+          <div className="flex items-center gap-3">
+            <Palette size={13} className="text-[#63637a] shrink-0" />
+            <label className="text-[11px] text-[#63637a] shrink-0">Color</label>
+            <div className="flex items-center gap-1.5">
+              {['', '#1a1a2e', '#0a1a3a', '#1565C0', '#0D47A1', '#1a2a1a', '#2a4a7a', '#8a2a2a', '#2d4a2d', '#D4A020', '#5a2a6a'].map((c) => (
+                <button
+                  key={c || 'default'}
+                  onClick={() => setBodyColor(c)}
+                  className={`w-5 h-5 rounded-full border transition-colors ${
+                    bodyColor === c
+                      ? 'border-[#c8ff2e] ring-1 ring-[#c8ff2e]/40'
+                      : 'border-[#3a3a44] hover:border-[#5a5a6a]'
+                  }`}
+                  style={{ backgroundColor: c || '#3a3a4a' }}
+                  title={c || 'Default'}
+                />
+              ))}
+              <input
+                type="color"
+                value={bodyColor || '#1a1a2e'}
+                onChange={(e) => setBodyColor(e.target.value)}
+                className="w-5 h-5 rounded cursor-pointer border border-[#3a3a44] bg-transparent"
+                title="Custom color"
+              />
+              {bodyColor && (
+                <button
+                  onClick={() => setBodyColor('')}
+                  className="text-[10px] text-[#52525b] hover:text-[#a6a6b8] px-1.5 py-0.5 rounded border border-[#222228] hover:border-[#3a3a44] transition-colors ml-1"
+                >
+                  Reset
+                </button>
+              )}
             </div>
           </div>
 
