@@ -383,39 +383,45 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
         const localRow = worldRow - pcb.position.row;
         // For slice cuts, worldCol is fractional (x.5), so we need to check the integer part
         const intCol = Math.floor(worldCol);
-        const localCol = intCol - pcb.position.col;
+        const localCol = worldCol - pcb.position.col; // Keep fractional part for slice cuts
         
         // Check if position is within this PCB's bounds
-        if (localRow >= 0 && localRow < pcb.rows && localCol >= 0 && localCol < pcb.cols) {
+        if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
           // Find the strip on this PCB
           const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
           
           return {
             strips: state.strips.map((s) => {
-              if (s.id === stripId && localCol >= s.startCol && localCol <= s.endCol) {
+              if (s.id === stripId) {
+                // Check if the localCol is within strip bounds
+                const intLocalCol = Math.floor(localCol);
+                if (intLocalCol < s.startCol || intLocalCol > s.endCol) {
+                  return s;
+                }
+                
                 // Initialize cuts array if it doesn't exist
                 const cuts = s.cuts || [];
                 
-                // Check if cut already exists at this position
-                if (cuts.some(c => c.col === worldCol)) {
+                // Check if cut already exists at this position (using local coordinates)
+                if (cuts.some(c => c.col === localCol)) {
                   return s; // Cut already exists, no change
                 }
                 
-                // Add new cut
-                const newCuts = [...cuts, { col: worldCol, type }].sort((a, b) => a.col - b.col);
+                // Add new cut (using local coordinates)
+                const newCuts = [...cuts, { col: localCol, type }].sort((a, b) => a.col - b.col);
                 
                 // For backward compatibility: Update breaks array
                 // - For drill cuts on integer positions: add to breaks if not there
                 // - Remove from breaks if it's there (to avoid duplicates after migration)
                 let breaks = s.breaks;
-                if (type === 'drill' && Number.isInteger(worldCol)) {
+                if (type === 'drill' && Number.isInteger(localCol)) {
                   // Ensure the position is in breaks for backward compatibility
-                  if (!breaks.includes(worldCol)) {
-                    breaks = [...breaks, worldCol].sort((a, b) => a - b);
+                  if (!breaks.includes(localCol)) {
+                    breaks = [...breaks, localCol].sort((a, b) => a - b);
                   }
                 } else {
                   // For slice cuts, ensure NOT in breaks array
-                  breaks = breaks.filter(b => b !== worldCol);
+                  breaks = breaks.filter(b => b !== localCol);
                 }
                 
                 return { ...s, cuts: newCuts, breaks };
@@ -434,23 +440,23 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       for (const pcb of state.pcbs) {
         const localRow = worldRow - pcb.position.row;
         // For slice cuts, worldCol is fractional (x.5)
+        const localCol = worldCol - pcb.position.col; // Keep fractional part for slice cuts
         const intCol = Math.floor(worldCol);
-        const localCol = intCol - pcb.position.col;
         
         // Check if position is within this PCB's bounds
-        if (localRow >= 0 && localRow < pcb.rows && localCol >= 0 && localCol < pcb.cols) {
+        if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
           // Find the strip on this PCB
           const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
           
           return {
             strips: state.strips.map((s) => {
               if (s.id === stripId) {
-                // Remove from cuts array
-                const cuts = s.cuts ? s.cuts.filter((c) => c.col !== worldCol) : [];
+                // Remove from cuts array (using local coordinates)
+                const cuts = s.cuts ? s.cuts.filter((c) => c.col !== localCol) : [];
                 
                 // For backward compatibility, also update breaks array (only for integer positions)
-                const breaks = Number.isInteger(worldCol) 
-                  ? s.breaks.filter((b) => b !== worldCol)
+                const breaks = Number.isInteger(localCol) 
+                  ? s.breaks.filter((b) => b !== localCol)
                   : s.breaks;
                 
                 return { ...s, cuts, breaks };
@@ -470,21 +476,22 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
     for (const pcb of state.pcbs) {
       const localRow = worldRow - pcb.position.row;
       // For slice cuts, worldCol is fractional (x.5)
+      const localCol = worldCol - pcb.position.col; // Keep fractional part for slice cuts
       const intCol = Math.floor(worldCol);
-      const localCol = intCol - pcb.position.col;
       
       // Check if position is within this PCB's bounds
-      if (localRow >= 0 && localRow < pcb.rows && localCol >= 0 && localCol < pcb.cols) {
+      if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
         // Find the strip on this PCB
         const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
         const strip = state.strips.find((s) => s.id === stripId);
         
         if (!strip) return;
-        if (localCol < strip.startCol || localCol >= strip.endCol) return;
+        const intLocalCol = Math.floor(localCol);
+        if (intLocalCol < strip.startCol || intLocalCol > strip.endCol) return;
         
-        // Check if cut exists in cuts array
+        // Check if cut exists in cuts array (using local coordinates)
         const cuts = strip.cuts || [];
-        const hasCut = cuts.some(c => c.col === worldCol);
+        const hasCut = cuts.some(c => c.col === localCol);
         
         if (hasCut) {
           state.removeCut(worldRow, worldCol);
@@ -747,16 +754,17 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
           for (const pcb of s.pcbs) {
             const localRow = cut.row - pcb.position.row;
             const localCol = cut.col - pcb.position.col;
+            const intCol = Math.floor(cut.col);
             
             // Check if position is within this PCB's bounds
-            if (localRow >= 0 && localRow < pcb.rows && localCol >= 0 && localCol < pcb.cols) {
+            if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
               const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
               
               strips = strips.map((strip) => {
                 if (strip.id === stripId) {
-                  // Remove from both cuts and breaks arrays
-                  const newCuts = (strip.cuts || []).filter(c => c.col !== cut.col);
-                  const newBreaks = (strip.breaks || []).filter(b => b !== cut.col);
+                  // Remove from both cuts and breaks arrays (using local coordinates)
+                  const newCuts = (strip.cuts || []).filter(c => c.col !== localCol);
+                  const newBreaks = (strip.breaks || []).filter(b => b !== localCol);
                   return { ...strip, cuts: newCuts, breaks: newBreaks };
                 }
                 return strip;
@@ -800,8 +808,9 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
           for (const pcb of state.pcbs) {
             const localRow = oldRow - pcb.position.row;
             const localCol = oldCol - pcb.position.col;
+            const intCol = Math.floor(oldCol);
             
-            if (localRow >= 0 && localRow < pcb.rows && localCol >= 0 && localCol < pcb.cols) {
+            if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
               const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
               const strip = state.strips.find(s => s.id === stripId);
               if (strip) {
@@ -832,12 +841,13 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
           for (const pcb of state.pcbs) {
             const localRow = move.oldRow - pcb.position.row;
             const localCol = move.oldCol - pcb.position.col;
+            const intCol = Math.floor(move.oldCol);
             
-            if (localRow >= 0 && localRow < pcb.rows && localCol >= 0 && localCol < pcb.cols) {
+            if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
               const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
               newStrips = newStrips.map((strip) => {
                 if (strip.id === stripId) {
-                  // Remove from both cuts and breaks arrays
+                  // Remove from both cuts and breaks arrays (using local coordinates)
                   const newCuts = (strip.cuts || []).filter(c => c.col !== localCol);
                   const newBreaks = (strip.breaks || []).filter(b => b !== localCol);
                   return { ...strip, cuts: newCuts, breaks: newBreaks };
@@ -854,19 +864,21 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
           for (const pcb of state.pcbs) {
             const localRow = move.newRow - pcb.position.row;
             const localCol = move.newCol - pcb.position.col;
+            const intCol = Math.floor(move.newCol);
             
-            if (localRow >= 0 && localRow < pcb.rows && localCol >= 0 && localCol < pcb.cols) {
+            if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
               const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
               newStrips = newStrips.map((strip) => {
                 if (strip.id === stripId) {
                   // Check if position is within strip bounds
+                  const intLocalCol = Math.floor(localCol);
                   const isInBounds = move.type === 'drill' 
-                    ? localCol >= strip.startCol && localCol <= strip.endCol
-                    : localCol >= strip.startCol - 0.5 && localCol <= strip.endCol + 0.5;
+                    ? intLocalCol >= strip.startCol && intLocalCol <= strip.endCol
+                    : intLocalCol >= strip.startCol - 0.5 && intLocalCol <= strip.endCol + 0.5;
                   
                   if (isInBounds) {
                     const cuts = strip.cuts || [];
-                    // Only add if not already present
+                    // Only add if not already present (using local coordinates)
                     if (!cuts.some(c => c.col === localCol)) {
                       return { 
                         ...strip, 
@@ -1431,12 +1443,14 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
         let cutType: 'drill' | 'slice' = 'drill'; // default
         for (const pcb of state.pcbs) {
           const localRow = worldRow - pcb.position.row;
+          const localCol = worldCol - pcb.position.col;
+          const intCol = Math.floor(worldCol);
           
-          if (localRow >= 0 && localRow < pcb.rows) {
+          if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
             const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
             const strip = state.strips.find(s => s.id === stripId);
             if (strip) {
-              const cut = strip.cuts?.find(c => c.col === worldCol);
+              const cut = strip.cuts?.find(c => c.col === localCol);
               if (cut) {
                 cutType = cut.type;
               }
@@ -1556,23 +1570,29 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
         for (const pcb of s.pcbs) {
           const localRow = cut.row - pcb.position.row;
           const localCol = cut.col - pcb.position.col;
+          const intCol = Math.floor(cut.col);
           
           // Check if position is within this PCB's bounds
-          if (localRow >= 0 && localRow < pcb.rows && localCol >= 0 && localCol < pcb.cols) {
+          if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
             const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
             
             strips = strips.map((strip) => {
-              if (strip.id === stripId && localCol >= strip.startCol && localCol <= strip.endCol) {
+              if (strip.id === stripId) {
+                const intLocalCol = Math.floor(localCol);
+                if (intLocalCol < strip.startCol || intLocalCol > strip.endCol) {
+                  return strip;
+                }
+                
                 const cuts = strip.cuts || [];
-                // Only add if not already present
-                if (!cuts.some(c => c.col === cut.col)) {
-                  const newCuts = [...cuts, { col: cut.col, type: cut.type }].sort((a, b) => a.col - b.col);
+                // Only add if not already present (using local coordinates)
+                if (!cuts.some(c => c.col === localCol)) {
+                  const newCuts = [...cuts, { col: localCol, type: cut.type }].sort((a, b) => a.col - b.col);
                   
                   // For backward compatibility: Update breaks array for drill cuts
                   let breaks = strip.breaks;
-                  if (cut.type === 'drill' && Number.isInteger(cut.col)) {
-                    if (!breaks.includes(cut.col)) {
-                      breaks = [...breaks, cut.col].sort((a, b) => a - b);
+                  if (cut.type === 'drill' && Number.isInteger(localCol)) {
+                    if (!breaks.includes(localCol)) {
+                      breaks = [...breaks, localCol].sort((a, b) => a - b);
                     }
                   }
                   

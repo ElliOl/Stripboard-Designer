@@ -290,10 +290,19 @@ export const StripboardCanvas = () => {
   }, [components, viewportBounds]);
 
   const visibleStrips = useMemo(() => {
-    return strips.filter((s) =>
-      isStripVisible(s.row, s.startCol, s.endCol, viewportBounds)
-    );
-  }, [strips, viewportBounds]);
+    return strips.filter((s) => {
+      // Find the PCB this strip belongs to
+      const pcb = pcbs.find(p => s.pcbId === p.id) || pcbs.find(p => p.isMain);
+      const pcbPosition = pcb ? pcb.position : { row: 0, col: 0 };
+      
+      // Convert strip local coordinates to world coordinates
+      const worldRow = s.row + pcbPosition.row;
+      const worldStartCol = s.startCol + pcbPosition.col;
+      const worldEndCol = s.endCol + pcbPosition.col;
+      
+      return isStripVisible(worldRow, worldStartCol, worldEndCol, viewportBounds);
+    });
+  }, [strips, viewportBounds, pcbs]);
 
   const visibleWires = useMemo(() => {
     return wires.filter((w) => isWireVisible(w.points, viewportBounds));
@@ -587,12 +596,13 @@ export const StripboardCanvas = () => {
         const allCuts = Array.from(cutsByCol.values());
         
         for (const cut of allCuts) {
-          // Use world coordinates for position check
-          const px = cut.col * GRID_PITCH;
+          // Convert local column to world column for position check and ID
+          const worldCol = cut.col + pcbPosition.col;
+          const px = worldCol * GRID_PITCH;
           const py = worldRow * GRID_PITCH;
           if (px >= minX && px <= maxX && py >= minY && py <= maxY) {
             // Cut IDs use world coordinates
-            ids.push(`cut-${worldRow}-${cut.col}`);
+            ids.push(`cut-${worldRow}-${worldCol}`);
           }
         }
       }
@@ -1515,8 +1525,9 @@ export const StripboardCanvas = () => {
               const allCuts = Array.from(cutsByCol.values());
               
               return allCuts.map((cut: any) => {
-                // Cut IDs use world coordinates
-                const cutId = `cut-${worldRow}-${cut.col}`;
+                // Convert local column to world column for cut ID
+                const worldCol = cut.col + pcbPosition.col;
+                const cutId = `cut-${worldRow}-${worldCol}`;
                 const isSelected = selectedItems.includes(cutId);
                 
                 return (

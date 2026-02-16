@@ -5,6 +5,7 @@ import type {
   Net,
   GridPosition,
   PCB,
+  Cut,
 } from './types';
 import { buildSpatialIndex, posKey, stripKey, type SpatialIndex } from './spatial-index';
 
@@ -375,21 +376,50 @@ function getNetsConnectedToStripIndexed(
 }
 
 function getStripSegments(strip: Strip): Array<{ startCol: number; endCol: number }> {
-  if (!strip.breaks || strip.breaks.length === 0) {
+  // Merge cuts array with old breaks array using Map for deduplication
+  const cutsArray = strip.cuts || [];
+  const breaksArray = strip.breaks || [];
+  
+  const cutsByCol = new Map<number, { col: number; type: 'drill' | 'slice' }>();
+  cutsArray.forEach(cut => {
+    cutsByCol.set(cut.col, cut);
+  });
+  breaksArray.forEach(col => {
+    if (!cutsByCol.has(col)) {
+      cutsByCol.set(col, { col, type: 'drill' as const });
+    }
+  });
+  
+  const allCuts = Array.from(cutsByCol.values());
+  
+  if (allCuts.length === 0) {
     return [{ startCol: strip.startCol, endCol: strip.endCol }];
   }
 
   const segments: Array<{ startCol: number; endCol: number }> = [];
-  const sortedBreaks = [...strip.breaks].sort((a, b) => a - b);
+  
+  // Separate drill and slice cuts - they break strips differently
+  // Drill cuts: break at integer column (hole is destroyed, breaks before and after)
+  // Slice cuts: break at half-integer column (between two holes, both holes remain)
+  const drillCols = allCuts.filter(c => c.type === 'drill').map(c => c.col);
+  const sliceCols = allCuts.filter(c => c.type === 'slice').map(c => c.col);
+  
+  // For drill cuts at column N: segment ends at N-1, next starts at N+1 (skip N)
+  // For slice cuts at column N.5: segment ends at N, next starts at N+1
+  const allBreaks: Array<{ breakBefore: number; isDrill: boolean }> = [
+    ...drillCols.map(col => ({ breakBefore: col, isDrill: true })),
+    ...sliceCols.map(col => ({ breakBefore: Math.ceil(col), isDrill: false }))
+  ].sort((a, b) => a.breakBefore - b.breakBefore);
   
   let start = strip.startCol;
-  for (const breakCol of sortedBreaks) {
-    if (breakCol > start) {
-      segments.push({ startCol: start, endCol: breakCol - 1 });
+  for (const { breakBefore, isDrill } of allBreaks) {
+    if (breakBefore > start) {
+      segments.push({ startCol: start, endCol: breakBefore - 1 });
     }
-    start = breakCol + 1;
+    // For drill cuts, skip the drilled column; for slice cuts, continue from the break
+    start = isDrill ? breakBefore + 1 : breakBefore;
   }
-  
+
   if (start <= strip.endCol) {
     segments.push({ startCol: start, endCol: strip.endCol });
   }
