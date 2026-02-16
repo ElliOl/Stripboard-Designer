@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { Stage, Layer, Line, Circle, Group, Rect } from 'react-konva';
+import { Stage, Layer, Line, Circle, Group, Rect, Text } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type { GridPosition, RatsNestConnection, Component as ComponentType, Wire as WireType, ComponentDefinition, Strip as StripType } from '@/lib/types';
 import { Grid } from './Grid';
@@ -1630,7 +1630,7 @@ export const StripboardCanvas = () => {
             activeComponents.map((c: ComponentType) => {
               const def = definitionMap.get(c.definitionId);
               if (!def) {
-                // Definition not found - this shouldn't happen but render pins anyway to show something
+                // Definition not found - render pins to show the component exists
                 console.warn(`Component ${c.reference} (${c.id}) has invalid definitionId: ${c.definitionId}`);
                 // Render just the pins as circles to show the component exists
                 return (
@@ -1639,6 +1639,13 @@ export const StripboardCanvas = () => {
                     x={c.position.col * 25.4}
                     y={c.position.row * 25.4}
                   >
+                    <Text
+                      x={0}
+                      y={-15}
+                      text={`${c.reference} (missing def)`}
+                      fontSize={10}
+                      fill="#ff4444"
+                    />
                     {c.pins.map((pin, i) => (
                       <Circle
                         key={`${c.id}-pin-${i}`}
