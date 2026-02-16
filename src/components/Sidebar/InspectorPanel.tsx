@@ -1077,22 +1077,50 @@ function NetManager() {
         title="Click to select/highlight. Right-click for options."
       >
         {/* Color swatch / picker */}
-        <label
-          className="shrink-0 cursor-pointer"
-          title="Change color"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="shrink-0 relative">
           <div
-            className="w-3 h-3 rounded-full border border-[#38384a]"
+            className="w-3 h-3 rounded-full border border-[#38384a] cursor-pointer"
             style={{ backgroundColor: net.color }}
+            title="Change color"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              // Trigger the hidden color input
+              const input = document.getElementById(`net-color-${net.id}`) as HTMLInputElement;
+              if (input) {
+                // Position the input at a fixed location to prevent scrolling
+                input.style.position = 'fixed';
+                input.style.top = '50%';
+                input.style.left = '50%';
+                input.click();
+              }
+            }}
           />
           <input
+            id={`net-color-${net.id}`}
             type="color"
             value={net.color}
             onChange={(e) => updateNet(net.id, { color: e.target.value })}
-            className="sr-only"
+            onBlur={() => {
+              // Reset position after color picker closes
+              const input = document.getElementById(`net-color-${net.id}`) as HTMLInputElement;
+              if (input) {
+                input.style.position = 'absolute';
+                input.style.top = '0';
+                input.style.left = '0';
+              }
+            }}
+            style={{
+              position: 'absolute',
+              opacity: 0,
+              pointerEvents: 'none',
+              width: '1px',
+              height: '1px',
+              top: 0,
+              left: 0,
+            }}
           />
-        </label>
+        </div>
 
         {/* Name (read-only unless editing via right-click) */}
         {isEditing ? (
