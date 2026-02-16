@@ -27,6 +27,7 @@ import {
   isVirtualRef,
 } from '@/lib/netlist-parser';
 import { createGenericDefinition, createDefinitionFromPlacements } from '@/lib/component-utils';
+import { clusterComponentsByConnectivity } from '@/lib/component-clustering';
 
 /**
  * Determine the default rotation for a component.
@@ -211,6 +212,7 @@ interface StripboardStore extends StripboardState {
   // Netlist
   importNetlist: (parsed: ParsedNetlist) => ImportReport;
   dismissImportReport: () => void;
+  reorganizeByConnectivity: () => void;
 
   // Reset
   reset: () => void;
@@ -1563,6 +1565,22 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
   },
 
   dismissImportReport: () => set({ importReport: null }),
+
+  reorganizeByConnectivity: () => {
+    const state = get();
+    if (state.components.length === 0) return;
+
+    state.saveToHistory();
+
+    const clustered = clusterComponentsByConnectivity(
+      state.components,
+      state.nets,
+      state.cols,
+      state.componentDefinitions
+    );
+
+    set({ components: clustered, selectedItems: [] });
+  },
 
   // ─── Copy / Paste ──────────────────────────────────────────
   copySelected: () => {

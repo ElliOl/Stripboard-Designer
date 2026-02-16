@@ -17,6 +17,7 @@ import {
   FolderPlus,
   FolderMinus,
   FolderX,
+  Group,
 } from 'lucide-react';
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
@@ -474,7 +475,7 @@ function UnconnectedNetsPanel() {
 // ─── Import Report (accordion, not dismissable) ─────────────────
 
 function ImportReportPanel() {
-  const { importReport: report } = useStripboardStore();
+  const { importReport: report, reorganizeByConnectivity } = useStripboardStore();
   const [isExpanded, setIsExpanded] = useState(true);
   const [showSkipped, setShowSkipped] = useState(true);
   const [showVirtual, setShowVirtual] = useState(false);
@@ -514,6 +515,27 @@ function ImportReportPanel() {
               </span>
             </div>
           </div>
+
+          {/* Cluster by connectivity */}
+          {report.importedComponents > 1 && report.importedNets > 0 && (
+            <div className="py-1.5">
+              <button
+                onClick={reorganizeByConnectivity}
+                className="flex items-center gap-1.5 w-full px-2 py-1.5 text-[11px] font-medium rounded-md
+                  bg-indigo-500/15 text-indigo-300 border border-indigo-500/25
+                  hover:bg-indigo-500/25 hover:text-indigo-200 hover:border-indigo-500/40
+                  transition-colors"
+                title="Rearrange components into groups based on shared signal nets"
+              >
+                <Group size={13} className="shrink-0" />
+                <span>Group by Connectivity</span>
+              </button>
+              <div className="text-[9px] text-[#38384a] italic px-1 pt-1 leading-relaxed">
+                Clusters components that share signal nets together.
+                Power nets (GND, VCC, etc.) are excluded.
+              </div>
+            </div>
+          )}
 
           {/* Skipped components */}
           {hasSkipped && (
