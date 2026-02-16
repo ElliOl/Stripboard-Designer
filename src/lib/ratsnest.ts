@@ -138,6 +138,9 @@ function ufUnion(parent: Int32Array, rank: Int32Array, a: number, b: number): bo
 /**
  * Discover connected groups using flood-fill.
  * Returns array of arrays, each inner array contains indices of connected pins.
+ * 
+ * Uses position-based BFS (not pin-index based) to properly handle intermediate
+ * positions like wire points on strips that don't have pins directly on them.
  */
 function discoverConnectedGroups(
   pinPositions: GridPosition[],
@@ -145,33 +148,40 @@ function discoverConnectedGroups(
   index: SpatialIndex,
   wires: Wire[]
 ): number[][] {
-  const visited = new Set<number>();
+  const visitedPins = new Set<number>();
   const groups: number[][] = [];
 
   for (let i = 0; i < pinPositions.length; i++) {
-    if (visited.has(i)) continue;
+    if (visitedPins.has(i)) continue;
 
-    // Start a new group with flood-fill from this pin
+    // Start a new group with position-based flood-fill from this pin
     const group: number[] = [];
-    const queue: number[] = [i];
-    visited.add(i);
+    const positionQueue: GridPosition[] = [pinPositions[i]];
+    const visitedPositions = new Set<string>();
+    visitedPositions.add(posKey(pinPositions[i]));
+    visitedPins.add(i);
+    group.push(i);
 
-    while (queue.length > 0) {
-      const currentIdx = queue.shift()!;
-      group.push(currentIdx);
-      const currentPos = pinPositions[currentIdx];
+    while (positionQueue.length > 0) {
+      const currentPos = positionQueue.shift()!;
 
-      // Find all other pins connected to this position
+      // Find all positions connected to this position (including intermediate positions)
       const connectedPositions = getConnectedPositionsForRatsnest(currentPos, index, netId, wires);
       
       for (const connPos of connectedPositions) {
+        const connKey = posKey(connPos);
+        if (visitedPositions.has(connKey)) continue;
+        
+        visitedPositions.add(connKey);
+        positionQueue.push(connPos);
+        
         // Check if any unvisited pin is at this connected position
         for (let j = 0; j < pinPositions.length; j++) {
-          if (!visited.has(j)) {
+          if (!visitedPins.has(j)) {
             const pinPos = pinPositions[j];
             if (pinPos.row === connPos.row && pinPos.col === connPos.col) {
-              visited.add(j);
-              queue.push(j);
+              visitedPins.add(j);
+              group.push(j);
             }
           }
         }
@@ -194,6 +204,10 @@ function discoverConnectedGroups(
  * the short, so we do NOT consider pins beyond the conflict as reachable.
  * This ensures the ratsnest keeps showing connections that still need
  * proper routing when there are errors/shorts on a strip.
+ * 
+ * Wire connectivity: Only includes wire connections if the wire actually
+ * connects to pins of the current net, preventing false connections
+ * through unrelated wires.
  */
 function getConnectedPositionsForRatsnest(
   pos: GridPosition,
@@ -232,14 +246,54 @@ function getConnectedPositionsForRatsnest(
   for (const wireId of wiresAtPos) {
     const wire = wires.find(w => w.id === wireId);
     if (wire) {
-      const idx = wire.points.findIndex(p => p.row === pos.row && p.col === pos.col);
-      if (idx >= 0) {
-        // Add all other points on this wire
-        wire.points.forEach((p, i) => {
-          if (i !== idx) {
-            connected.push(p);
+      // Check if this wire connects to the current net
+      // Need to check both direct pin connections AND connections through strips
+      let wireConnectsToNet = false;
+      
+      for (const wirePoint of wire.points) {
+        const wpKey = posKey(wirePoint);
+        
+        // Check for direct pin connection
+        const pinsAtPoint = index.pinsByPos.get(wpKey) || [];
+        if (pinsAtPoint.some(pin => pin.netId === netId)) {
+          wireConnectsToNet = true;
+          break;
+        }
+        
+        // Check for connection through a strip
+        const stripAtPoint = index.stripByRow.get(wirePoint.row);
+        if (stripAtPoint && wirePoint.col >= stripAtPoint.startCol && wirePoint.col <= stripAtPoint.endCol) {
+          const segment = findSegmentContaining(stripAtPoint, wirePoint.col);
+          if (segment) {
+            // Check if any pin in this strip segment belongs to the current net
+            for (let col = segment.startCol; col <= segment.endCol; col++) {
+              const colKey = posKey({ row: stripAtPoint.row, col });
+              const pinsOnStrip = index.pinsByPos.get(colKey) || [];
+              if (pinsOnStrip.some(pin => pin.netId === netId)) {
+                wireConnectsToNet = true;
+                break;
+              }
+              // Stop if we hit a conflicting net
+              if (pinsOnStrip.some(pin => pin.netId && pin.netId !== netId)) {
+                break;
+              }
+            }
+            if (wireConnectsToNet) break;
           }
-        });
+        }
+      }
+      
+      // Only add wire connections if the wire belongs to this net
+      if (wireConnectsToNet) {
+        const idx = wire.points.findIndex(p => p.row === pos.row && p.col === pos.col);
+        if (idx >= 0) {
+          // Add all other points on this wire
+          wire.points.forEach((p, i) => {
+            if (i !== idx) {
+              connected.push(p);
+            }
+          });
+        }
       }
     }
   }
