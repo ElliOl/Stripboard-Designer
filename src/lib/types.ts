@@ -128,6 +128,8 @@ export type ImportReport = {
   skippedComponents: SkippedComponent[];
   /** Power / virtual symbols recognised as nets but not placed */
   virtualComponents: { ref: string; value: string }[];
+  /** Nets that have only one connection (potential issue) */
+  incompleteNets?: Array<{ netName: string; netCode: string; nodeCount: number }>;
 };
 
 export type LayerVisibility = {

@@ -36,7 +36,9 @@ export function buildGenericDefId(
  *
  * Layout rules:
  *   - 1–6 pins → SIP / inline (single row)
- *   - 7+  pins → DIP-style (two rows, 3-hole gap)
+ *   - 7+ pins:
+ *     - SIP footprint → 2-row header (like 2x7, 2x8, etc.)
+ *     - Default → DIP-style (two rows, 3-hole gap for ICs)
  *
  * The caller can override the footprint type.
  */
@@ -49,11 +51,14 @@ export function createGenericDefinition(
 
   const pins: PinDefinition[] = [];
 
-  const useDIP = pinCount > 6 || footprintType === 'DIP';
-  const fpType = footprintType ?? (useDIP ? 'Custom' : 'Custom');
+  // Determine layout type
+  const isMultiRow = pinCount > 6;
+  const isHeaderStyle = footprintType === 'SIP';
+  const useDIP = isMultiRow && !isHeaderStyle;
+  const fpType = footprintType ?? (isMultiRow ? 'Custom' : 'Custom');
 
   if (useDIP) {
-    // DIP layout: pins on two rows with a 3-hole gap
+    // DIP layout: pins on two rows with a 3-hole gap (for ICs)
     const half = Math.ceil(pinCount / 2);
     // Top row: pins 1..half (left to right)
     for (let i = 0; i < half; i++) {
@@ -85,7 +90,34 @@ export function createGenericDefinition(
     };
   }
 
-  // SIP / inline layout
+  if (isHeaderStyle && isMultiRow) {
+    // 2-row header layout: pins alternate between rows (like 2xN headers)
+    // Pin 1, 3, 5... on row 0; Pin 2, 4, 6... on row 1
+    const cols = Math.ceil(pinCount / 2);
+    for (let i = 0; i < pinCount; i++) {
+      const isOdd = i % 2 === 0;
+      pins.push({
+        number: sorted[i],
+        position: { row: isOdd ? 0 : 1, col: Math.floor(i / 2) },
+      });
+    }
+
+    return {
+      id: buildGenericDefId(fpType, sorted),
+      name: `Generic ${pinCount}-Pin Header`,
+      category: 'Connector',
+      footprint: {
+        type: fpType,
+        dimensions: { rows: 2, cols, pitch: 2.54 },
+      },
+      pins,
+      metadata: {
+        description: `Auto-generated generic ${pinCount}-pin 2-row header`,
+      },
+    };
+  }
+
+  // SIP / inline layout (single row)
   for (let i = 0; i < pinCount; i++) {
     pins.push({
       number: sorted[i],
@@ -96,7 +128,7 @@ export function createGenericDefinition(
   return {
     id: buildGenericDefId(fpType, sorted),
     name: `Generic ${pinCount}-Pin`,
-    category: 'Passive',
+    category: pinCount <= 6 ? 'Connector' : 'Passive',
     footprint: {
       type: fpType,
       dimensions: { rows: 1, cols: pinCount, pitch: 2.54 },

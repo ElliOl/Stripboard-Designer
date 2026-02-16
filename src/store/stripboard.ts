@@ -962,6 +962,24 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
         imported: true,
       }));
 
+    // Detect incomplete nets (nets with only 1 node after component placement)
+    // Exclude intentionally unconnected nets (KiCad No-Connect flags)
+    const incompleteNets: Array<{ netName: string; netCode: string; nodeCount: number }> = [];
+    for (const net of parsed.nets) {
+      // Skip nets marked as unconnected (KiCad NC flags)
+      if (net.name.startsWith('unconnected-')) continue;
+      
+      // Count nodes that reference non-virtual components
+      const validNodes = net.nodes.filter(node => !isVirtualRef(node.ref));
+      if (validNodes.length === 1) {
+        incompleteNets.push({
+          netName: net.name,
+          netCode: net.code,
+          nodeCount: validNodes.length,
+        });
+      }
+    }
+
     // Track skipped and virtual components
     const skippedComponents: SkippedComponent[] = [];
     const virtualComponents: { ref: string; value: string }[] = [];
@@ -982,14 +1000,30 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       let defId = mapFootprintToDefinition(pc.footprint, pc.ref, pc.value);
       let def = defId ? defs.find((d) => d.id === defId) : null;
 
-      // ── Unknown / missing definition → create generic component ──
-      if (!defId || !def) {
-        const pinSet = pinsByRef.get(pc.ref);
+      // ── Check if matched definition has enough pins ──
+      const pinSet = pinsByRef.get(pc.ref);
+      const requiredPinCount = pinSet ? pinSet.size : 0;
+      const hasEnoughPins = def && def.pins.length >= requiredPinCount;
+
+      // ── Unknown / missing definition OR insufficient pins → create generic component ──
+      if (!defId || !def || !hasEnoughPins) {
         const pinNumbers = pinSet && pinSet.size > 0
-          ? [...pinSet]
+          ? [...pinSet].sort((a, b) => {
+              // Sort numerically if both are numbers, otherwise alphabetically
+              const aNum = parseInt(a, 10);
+              const bNum = parseInt(b, 10);
+              if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+              return a.localeCompare(b);
+            })
           : ['1', '2']; // fallback to 2-pin if no net references
 
-        const genericDef = createGenericDefinition(pinNumbers);
+        // Detect if this should be a header/connector layout (SIP/2-row) vs DIP (IC)
+        const fp = pc.footprint.toLowerCase();
+        const isHeader = fp.includes('header') || fp.includes('connector') || 
+                        fp.includes('terminal') || pc.ref.startsWith('J') || 
+                        pc.ref.startsWith('P');
+        
+        const genericDef = createGenericDefinition(pinNumbers, isHeader ? 'SIP' : undefined);
         // Re-use existing generic or add new one
         const existing = defs.find((d) => d.id === genericDef.id);
         if (!existing) {
@@ -1057,6 +1091,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       importedNets: newNets.length,
       skippedComponents,
       virtualComponents,
+      incompleteNets: incompleteNets.length > 0 ? incompleteNets : undefined,
     };
 
     state.saveToHistory();

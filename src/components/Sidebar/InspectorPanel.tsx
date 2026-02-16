@@ -478,11 +478,13 @@ function ImportReportPanel() {
   const [isExpanded, setIsExpanded] = useState(true);
   const [showSkipped, setShowSkipped] = useState(true);
   const [showVirtual, setShowVirtual] = useState(false);
+  const [showIncomplete, setShowIncomplete] = useState(true);
 
   if (!report) return null;
 
   const hasSkipped = report.skippedComponents.length > 0;
   const hasVirtual = report.virtualComponents.length > 0;
+  const hasIncomplete = (report.incompleteNets?.length ?? 0) > 0;
 
   return (
     <div className="border-b border-[#1c1c22]">
@@ -558,6 +560,48 @@ function ImportReportPanel() {
             </div>
           )}
 
+          {/* Incomplete nets (single connection) */}
+          {hasIncomplete && (
+            <div className="pb-1">
+              <button
+                onClick={() => setShowIncomplete((v) => !v)}
+                className="flex items-center gap-1 text-[11px] font-medium text-orange-400/90 w-full py-1 hover:text-orange-300 transition-colors"
+              >
+                {showIncomplete ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                <AlertTriangle size={11} className="shrink-0" />
+                <span>
+                  {report.incompleteNets!.length} incomplete net{report.incompleteNets!.length !== 1 ? 's' : ''}
+                </span>
+              </button>
+              {showIncomplete && (
+                <div className="ml-1 space-y-0.5 pb-1">
+                  {report.incompleteNets!.map((inc, i) => (
+                    <div
+                      key={`${inc.netCode}-${i}`}
+                      className="flex flex-col gap-0.5 py-1 px-2 bg-[#19191d] rounded-md border border-[#222228]"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-mono font-bold text-orange-300/80">
+                          {inc.netName}
+                        </span>
+                        <span className="text-[10px] text-[#52525b]">
+                          {inc.nodeCount} connection{inc.nodeCount !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="text-[9px] text-orange-400/60">
+                        This net has only one connection
+                      </div>
+                    </div>
+                  ))}
+                  <div className="text-[9px] text-[#38384a] italic px-1 pt-1 leading-relaxed">
+                    Nets should normally have at least 2 connections. This may indicate
+                    a component with missing pins or an incomplete circuit.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Virtual / power symbols */}
           {hasVirtual && (
             <div className="pb-1">
@@ -591,7 +635,7 @@ function ImportReportPanel() {
             </div>
           )}
 
-          {!hasSkipped && !hasVirtual && (
+          {!hasSkipped && !hasVirtual && !hasIncomplete && (
             <div className="pb-1 text-[10px] text-emerald-500/60">
               All components imported successfully.
             </div>
