@@ -428,16 +428,7 @@ export const LayersPanel = () => {
             const isComponentsLayer = layer.key === 'components';
             return (
               <div key={layer.key}>
-                <button
-                  onClick={() => {
-                    if (isBoardLayer) {
-                      setShowBoardAccordion(!showBoardAccordion);
-                    } else if (isComponentsLayer) {
-                      setShowComponentAccordion(!showComponentAccordion);
-                    } else {
-                      toggleLayer(layer.key);
-                    }
-                  }}
+                <div
                   className={`
                     w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md
                     transition-all group text-left
@@ -448,18 +439,38 @@ export const LayersPanel = () => {
                     }
                   `}
                 >
-                  {/* Color indicator + icon */}
-                  <div
+                  {/* Color indicator + icon - clickable area for toggle */}
+                  <button
+                    onClick={() => {
+                      if (isBoardLayer) {
+                        setShowBoardAccordion(!showBoardAccordion);
+                      } else if (isComponentsLayer) {
+                        setShowComponentAccordion(!showComponentAccordion);
+                      } else {
+                        toggleLayer(layer.key);
+                      }
+                    }}
                     className="shrink-0 flex items-center justify-center w-5 h-5 rounded"
                     style={{
                       color: isOn ? layer.color : '#38384a',
                     }}
                   >
                     {layer.icon}
-                  </div>
+                  </button>
 
-                  {/* Label + description */}
-                  <div className="flex-1 min-w-0">
+                  {/* Label + description - clickable area for toggle */}
+                  <button
+                    onClick={() => {
+                      if (isBoardLayer) {
+                        setShowBoardAccordion(!showBoardAccordion);
+                      } else if (isComponentsLayer) {
+                        setShowComponentAccordion(!showComponentAccordion);
+                      } else {
+                        toggleLayer(layer.key);
+                      }
+                    }}
+                    className="flex-1 min-w-0 text-left"
+                  >
                     <div
                       className={`text-[11px] font-medium leading-tight ${
                         isOn ? 'text-[#ededf0]' : 'text-[#52525b]'
@@ -470,7 +481,7 @@ export const LayersPanel = () => {
                     <div className="text-[9px] text-[#38384a] leading-tight truncate">
                       {layer.description}
                     </div>
-                  </div>
+                  </button>
 
                   {/* Color picker for strips - inline */}
                   {isStripsLayer && isOn && (
@@ -478,10 +489,7 @@ export const LayersPanel = () => {
                       {PRESET_STRIP_COLORS.map((preset) => (
                         <button
                           key={preset.color}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setStripColor(preset.color);
-                          }}
+                          onClick={() => setStripColor(preset.color)}
                           className={`
                             w-4 h-4 rounded-full transition-all
                             ${stripColor === preset.color ? 'ring-1 ring-[#c8ff2e] ring-offset-1 ring-offset-[#0e0e12]' : 'hover:ring-1 hover:ring-[#63637a]'}
@@ -496,10 +504,7 @@ export const LayersPanel = () => {
                   {/* Mode radio button for nets - inline */}
                   {isNetsLayer && isOn && (
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setNetHighlightMode(netHighlightMode === 'full' ? 'connections' : 'full');
-                      }}
+                      onClick={() => setNetHighlightMode(netHighlightMode === 'full' ? 'connections' : 'full')}
                       className={`
                         shrink-0 mr-2 w-4 h-4 rounded-full transition-all flex items-center justify-center
                         ${netHighlightMode === 'connections' ? 'ring-1 ring-[#c8ff2e] ring-offset-1 ring-offset-[#0e0e12]' : 'ring-1 ring-[#38384a]'}
@@ -518,10 +523,7 @@ export const LayersPanel = () => {
                   {/* Mode radio button for ratsnest - inline */}
                   {isRatsNestLayer && isOn && (
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setRatsnestColorMode(ratsnestColorMode === 'colored' ? 'white' : 'colored');
-                      }}
+                      onClick={() => setRatsnestColorMode(ratsnestColorMode === 'colored' ? 'white' : 'colored')}
                       className={`
                         shrink-0 mr-2 w-4 h-4 rounded-full transition-all flex items-center justify-center
                         ${ratsnestColorMode === 'white' ? 'ring-1 ring-[#c8ff2e] ring-offset-1 ring-offset-[#0e0e12]' : 'ring-1 ring-[#38384a]'}
@@ -541,10 +543,7 @@ export const LayersPanel = () => {
                   {isBoardLayer && (
                     <>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleLayer('board');
-                        }}
+                        onClick={() => toggleLayer('board')}
                         className={`shrink-0 transition-colors p-0.5 rounded hover:bg-[#1c1c22] ${
                           isOn
                             ? 'text-[#63637a] group-hover:text-[#a6a6b8]'
@@ -572,10 +571,7 @@ export const LayersPanel = () => {
                   {isComponentsLayer && (
                     <>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleLayer('components');
-                        }}
+                        onClick={() => toggleLayer('components')}
                         className={`shrink-0 transition-colors p-0.5 rounded hover:bg-[#1c1c22] ${
                           isOn
                             ? 'text-[#63637a] group-hover:text-[#a6a6b8]'
@@ -611,7 +607,7 @@ export const LayersPanel = () => {
                       {isOn ? <Eye size={13} /> : <EyeOff size={13} />}
                     </div>
                   )}
-                </button>
+                </div>
 
                 {/* Components opacity accordion */}
                 {isComponentsLayer && showComponentAccordion && (
