@@ -132,7 +132,6 @@ export const StripboardCanvas = () => {
   const moveSelectedItems = useStripboardStore((s) => s.moveSelectedItems);
   const addComponent = useStripboardStore((s) => s.addComponent);
   const addWire = useStripboardStore((s) => s.addWire);
-  const toggleCut = useStripboardStore((s) => s.toggleCut);
   const addCut = useStripboardStore((s) => s.addCut);
   const removeCut = useStripboardStore((s) => s.removeCut);
   const saveToHistory = useStripboardStore((s) => s.saveToHistory);
@@ -933,10 +932,9 @@ export const StripboardCanvas = () => {
       return;
     }
 
-    // Cut strip — toggle a break on the strip at this row
+    // Cut strip — now fully handled by mousedown/mousemove/mouseup
     if (activeTool === 'cutStrip') {
-      saveToHistory();
-      toggleCut(grid.row, grid.col);
+      // No-op: cut dragging is handled in mouse down/move/up
       return;
     }
   };
