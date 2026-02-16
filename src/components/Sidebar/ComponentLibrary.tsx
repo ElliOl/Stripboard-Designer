@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Cpu, Zap, Radio, CircuitBoard, ChevronDown, ChevronRight, Box } from 'lucide-react';
 import { useStripboardStore } from '@/store/stripboard';
 import type { ComponentDefinition } from '@/lib/types';
@@ -25,23 +25,24 @@ export const ComponentLibrary = () => {
   
   // Track which categories are expanded (all expanded by default)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
-  const [libraryLoaded, setLibraryLoaded] = useState(false);
+  // Use a ref to prevent double loading in React strict mode
+  const libraryLoadedRef = useRef(false);
 
   useEffect(() => {
     // Only load the library once to avoid overwriting dynamic definitions
-    if (libraryLoaded) return;
+    if (libraryLoadedRef.current) return;
+    libraryLoadedRef.current = true;
     
     fetch('/components/library.json')
       .then((res) => res.json())
       .then((data: ComponentDefinition[]) => {
         loadComponentDefinitions(data);
-        setLibraryLoaded(true);
         // Categories start collapsed by default
       })
       .catch((err) =>
         console.error('Failed to load component library:', err)
       );
-  }, [loadComponentDefinitions, libraryLoaded]);
+  }, [loadComponentDefinitions]);
 
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => {
