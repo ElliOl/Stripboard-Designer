@@ -5,7 +5,6 @@ import type {
   Net,
   GridPosition,
   PCB,
-  Cut,
 } from './types';
 import { buildSpatialIndex, posKey, stripKey, type SpatialIndex } from './spatial-index';
 

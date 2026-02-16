@@ -70,7 +70,7 @@ export const EditComponentDialog = ({
 
   // Track the original min position to detect when the component origin shifts
   // These are in the ROTATED board space (how pins appear on the board)
-  const [originalMinPos, setOriginalMinPos] = useState<{ row: number; col: number }>(() => {
+  const [originalMinPos] = useState<{ row: number; col: number }>(() => {
     if (!definition || definition.pins.length === 0 || !component) return { row: 0, col: 0 };
     // Get rotated positions (how they appear on board)
     const rotatedPins = getRotatedPinPositions(definition.pins, component.rotation);
@@ -164,88 +164,6 @@ export const EditComponentDialog = ({
       );
     },
     []
-  );
-
-  // ─── Preset Layouts ─────────────────────────────────────
-  const applyPreset = useCallback(
-    (type: FootprintTypeOption) => {
-      const count = pinPlacements.length || 2;
-      let newPins: PinPlacement[] = [];
-
-      switch (type) {
-        case 'SIP': {
-          for (let i = 0; i < count; i++) {
-            newPins.push({
-              row: 0,
-              col: i,
-              number: String(i + 1),
-              name: '',
-            });
-          }
-          break;
-        }
-        case 'DIP': {
-          const half = Math.ceil(count / 2);
-          for (let i = 0; i < half; i++) {
-            newPins.push({
-              row: 0,
-              col: i,
-              number: String(i + 1),
-              name: '',
-            });
-          }
-          for (let i = 0; i < count - half; i++) {
-            newPins.push({
-              row: 3,
-              col: half - 1 - i,
-              number: String(half + i + 1),
-              name: '',
-            });
-          }
-          break;
-        }
-        case 'Axial': {
-          const span = Math.max(2, count - 1);
-          for (let i = 0; i < count; i++) {
-            newPins.push({
-              row: 0,
-              col: i * Math.ceil(span / Math.max(count - 1, 1)),
-              number: String(i + 1),
-              name: '',
-            });
-          }
-          break;
-        }
-        case 'Radial': {
-          for (let i = 0; i < count; i++) {
-            newPins.push({
-              row: 0,
-              col: i,
-              number: String(i + 1),
-              name: i === 0 ? '+' : i === 1 ? '-' : '',
-            });
-          }
-          break;
-        }
-        default: // Custom — keep current
-          return;
-      }
-
-      // Preserve existing names and net info where possible
-      for (let i = 0; i < newPins.length && i < pinPlacements.length; i++) {
-        if (pinPlacements[i].name) newPins[i].name = pinPlacements[i].name;
-      }
-
-      setPinPlacements(newPins);
-      setSelectedPinIdx(null);
-
-      // Expand grid if needed
-      const maxR = Math.max(...newPins.map((p) => p.row), 0);
-      const maxC = Math.max(...newPins.map((p) => p.col), 0);
-      setGridRows((r) => Math.max(r, maxR + 3));
-      setGridCols((c) => Math.max(c, maxC + 3));
-    },
-    [pinPlacements]
   );
 
   // ─── Clear All Pins ─────────────────────────────────────
@@ -562,11 +480,6 @@ export const EditComponentDialog = ({
                     setFootprintType(newDef.footprint.type as FootprintTypeOption);
                     // Update the component definition immediately for single edit
                     if (!isBulkEdit) {
-                      // Convert current pin placements to unrotated space
-                      const unrotatedPlacements = unrotatePositions(
-                        pinPlacements.map(p => ({ row: p.row, col: p.col })),
-                        component.rotation
-                      );
                       // Update pin placements to match new definition
                       const rotatedNewDefPins = getRotatedPinPositions(newDef.pins, component.rotation);
                       setPinPlacements(rotatedNewDefPins.map((p, i) => ({

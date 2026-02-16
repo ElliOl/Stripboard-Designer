@@ -122,9 +122,6 @@ function getStripSegments(strip: StripType): Array<{ startCol: number; endCol: n
   const drillCols = allCuts.filter(c => c.type === 'drill').map(c => c.col);
   const sliceCols = allCuts.filter(c => c.type === 'slice').map(c => c.col);
   
-  // Create a set of all positions that are drilled (to skip them)
-  const drilledPositions = new Set(drillCols);
-  
   // For drill cuts at column N: segment ends at N-1, next starts at N+1 (skip N)
   // For slice cuts at column N.5: segment ends at N, next starts at N+1
   const allBreaks: Array<{ breakBefore: number; isDrill: boolean }> = [
@@ -150,7 +147,6 @@ function getStripSegments(strip: StripType): Array<{ startCol: number; endCol: n
 
 const StripImpl = ({
   strip,
-  showCuts = false,
   showNetHighlight = false,
   segmentNets,
   segmentErrors,
