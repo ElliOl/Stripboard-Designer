@@ -406,12 +406,12 @@ function ComponentsCategory() {
 // ─── Unconnected Nets Panel ─────────────────────────────────
 
 function UnconnectedNetsPanel() {
-  const { nets, components, wires, strips, setHighlightedNet, setPan, setZoom } = useStripboardStore();
+  const { nets, components, wires, strips, pcbs, setHighlightedNet, setPan, setZoom } = useStripboardStore();
   const [isExpanded, setIsExpanded] = useState(false); // Start closed
 
   const ratsNest = useMemo(() => {
-    return calculateRatsNest(components, strips, wires, nets);
-  }, [components, strips, wires, nets]);
+    return calculateRatsNest(components, strips, wires, nets, pcbs);
+  }, [components, strips, wires, nets, pcbs]);
 
   const unconnectedNets = nets.filter(net => {
     return ratsNest.some(conn => conn.netId === net.id);

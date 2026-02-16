@@ -39,6 +39,7 @@ interface ComponentProps {
   connectedGroups?: Map<string, Array<Set<string>>>;
   zoom: number;
   opacity?: number;
+  disableShadows?: boolean; // Performance optimization: disable shadows when opacity < 1.0
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -63,7 +64,96 @@ function getComponentSubtype(defId: string): string {
   return '';
 }
 
-export const Component = memo(({
+// ─── Component Props Comparison (for memo optimization) ───────
+// Custom comparison function to prevent unnecessary re-renders
+// Only re-render if this component is actually affected by the prop changes
+const componentPropsAreEqual = (prevProps: ComponentProps, nextProps: ComponentProps): boolean => {
+  // If component identity changed, always re-render
+  if (prevProps.component.id !== nextProps.component.id) return false;
+  
+  // If component properties changed, re-render
+  if (
+    prevProps.component.position.row !== nextProps.component.position.row ||
+    prevProps.component.position.col !== nextProps.component.position.col ||
+    prevProps.component.rotation !== nextProps.component.rotation ||
+    prevProps.component.reference !== nextProps.component.reference ||
+    prevProps.component.value !== nextProps.component.value ||
+    prevProps.component.color !== nextProps.component.color ||
+    prevProps.component.ledColor !== nextProps.component.ledColor
+  ) {
+    return false;
+  }
+  
+  // If selection changed, re-render
+  if (prevProps.isSelected !== nextProps.isSelected) return false;
+  
+  // If visibility settings changed, re-render
+  if (
+    prevProps.showRefs !== nextProps.showRefs ||
+    prevProps.showValues !== nextProps.showValues ||
+    prevProps.opacity !== nextProps.opacity
+  ) {
+    return false;
+  }
+  
+  // If highlighting changed AND this component is affected, re-render
+  if (prevProps.highlightedNetId !== nextProps.highlightedNetId) {
+    const wasRelevant = prevProps.component.pins.some(p => p.netId === prevProps.highlightedNetId);
+    const isRelevant = nextProps.component.pins.some(p => p.netId === nextProps.highlightedNetId);
+    // Only re-render if this component is or was relevant to highlighting
+    if (wasRelevant || isRelevant || !prevProps.highlightedNetId || !nextProps.highlightedNetId) {
+      return false;
+    }
+  }
+  
+  // If connectedGroups changed (but only if we're in highlighting mode), re-render
+  // This handles the case where connectivity recalculates during highlighting
+  if (prevProps.connectedGroups !== nextProps.connectedGroups) {
+    // Only care if we're in highlight mode
+    if (prevProps.highlightedNetId || nextProps.highlightedNetId) {
+      return false;
+    }
+  }
+  
+  // If zoom crosses LOD thresholds, re-render
+  const prevShowPinNumbers = prevProps.zoom > 0.7;
+  const nextShowPinNumbers = nextProps.zoom > 0.7;
+  const prevShowLabels = prevProps.zoom > 0.5;
+  const nextShowLabels = nextProps.zoom > 0.5;
+  const prevShowShadows = prevProps.zoom > 0.4;
+  const nextShowShadows = nextProps.zoom > 0.4;
+  
+  if (
+    prevShowPinNumbers !== nextShowPinNumbers ||
+    prevShowLabels !== nextShowLabels ||
+    prevShowShadows !== nextShowShadows
+  ) {
+    return false;
+  }
+  
+  // If pins changed (net assignments), re-render
+  if (prevProps.component.pins.length !== nextProps.component.pins.length) {
+    return false;
+  }
+  
+  for (let i = 0; i < prevProps.component.pins.length; i++) {
+    const prevPin = prevProps.component.pins[i];
+    const nextPin = nextProps.component.pins[i];
+    if (
+      prevPin.netId !== nextPin.netId ||
+      prevPin.number !== nextPin.number ||
+      prevPin.position.row !== nextPin.position.row ||
+      prevPin.position.col !== nextPin.position.col
+    ) {
+      return false;
+    }
+  }
+  
+  // Otherwise, skip re-render (return true means props are equal)
+  return true;
+};
+
+const ComponentImpl = ({
   component,
   definition,
   isSelected,
@@ -74,11 +164,47 @@ export const Component = memo(({
   connectedGroups,
   zoom,
   opacity = 1.0,
+  disableShadows = false,
 }: ComponentProps) => {
+  // ─── Early optimization: Check if this component is relevant to highlighting ───
+  // Only do expensive highlight calculations if this component has pins on the highlighted net
+  const hasRelevantPins = useMemo(() => {
+    if (!highlightedNetId) return false;
+    return component.pins.some(p => p.netId === highlightedNetId);
+  }, [highlightedNetId, component.pins]);
+
+  // ─── Net Highlighting (early calculation for LOD) ──────────────
+  // Calculate dimmed state early so we can use it for LOD thresholds
+  const highlightedPinNumbers = useMemo(() => {
+    const result = new Set<string>();
+    if (!highlightedNetId || !hasRelevantPins || !connectedGroups) return result;
+
+    const myNetPins = component.pins.filter(p => p.netId === highlightedNetId);
+    const groups = connectedGroups.get(highlightedNetId) || [];
+    
+    if (groups.length === 0) {
+      myNetPins.forEach(p => result.add(p.number));
+      return result;
+    }
+
+    for (const pin of myNetPins) {
+      const pinKey = posKey(pin.position);
+      for (const group of groups) {
+        if (group.has(pinKey)) {
+          result.add(pin.number);
+          break;
+        }
+      }
+    }
+
+    return result;
+  }, [highlightedNetId, hasRelevantPins, component.pins, connectedGroups]);
+
   // ─── Level of Detail Thresholds ───────────────────────────────
   const showPinNumbers = zoom > 0.7;
   const showLabels = zoom > 0.5;
-  const showShadows = zoom > 0.4;
+  // CRITICAL PERFORMANCE: Disable shadows when opacity < 1.0 (dimmed state)
+  const showShadows = zoom > 0.4 && !disableShadows;
 
   // ─── Rotated positions (relative to component origin) ────
   const rotatedPins = getRotatedPinPositions(
@@ -150,38 +276,7 @@ export const Component = memo(({
     };
   })();
 
-  // ─── Net Highlighting ──────────────────────────────────────
-  const highlightedPinNumbers = useMemo(() => {
-    const result = new Set<string>();
-    if (!highlightedNetId || !connectedGroups) return result;
-
-    const myNetPins = component.pins.filter(p => p.netId === highlightedNetId);
-    if (myNetPins.length === 0) return result;
-
-    const groups = connectedGroups.get(highlightedNetId) || [];
-    if (groups.length === 0) {
-      myNetPins.forEach(p => result.add(p.number));
-      return result;
-    }
-
-    for (const pin of myNetPins) {
-      const pinKey = posKey(pin.position);
-      for (const group of groups) {
-        if (group.has(pinKey)) {
-          result.add(pin.number);
-          break;
-        }
-      }
-    }
-
-    return result;
-  }, [highlightedNetId, component.pins, connectedGroups]);
-
-  const hasHighlightedPin = highlightedPinNumbers.size > 0;
-  const isDimmed = !!highlightedNetId && !hasHighlightedPin;
-  const finalOpacity = isDimmed ? 0.2 : opacity;
-
-  // ─── Resistor upright detection ────────────────────────────
+  const finalOpacity = opacity;
   const isResistorUpright = subtype === 'resistor' && definition.id === 'resistor-upright';
 
   // ─── Diode detection ──────────────────────────────────────
@@ -204,6 +299,7 @@ export const Component = memo(({
       x={component.position.col * GP}
       y={component.position.row * GP}
       opacity={finalOpacity}
+      perfectDrawEnabled={false} // Disable perfect drawing for better performance
     >
       {/* ═══════════════════════════════════════════════════════
           LAYER 1 — Bodies & decorative shapes
@@ -1588,6 +1684,9 @@ export const Component = memo(({
       })}
     </Group>
   );
-});
+};
+
+// Export memoized component with custom comparison
+export const Component = memo(ComponentImpl, componentPropsAreEqual);
 
 Component.displayName = 'Component';

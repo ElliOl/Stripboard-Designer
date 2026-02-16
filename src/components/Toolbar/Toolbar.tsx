@@ -4,13 +4,14 @@ import {
   Cable,
   Save,
   Upload,
-  Scissors,
   RotateCw,
   FileUp,
   Waypoints,
   GripHorizontal,
   AlertTriangle,
   Settings,
+  Circle,
+  Minus,
 } from 'lucide-react';
 import { useStripboardStore } from '@/store/stripboard';
 import { parseKiCadNetlist } from '@/lib/netlist-parser';
@@ -25,7 +26,8 @@ const tools: Array<{
 }> = [
   { type: 'select', icon: MousePointer2, label: 'Select', shortcut: 'V' },
   { type: 'routeWire', icon: Cable, label: 'Route Wire', shortcut: 'W' },
-  { type: 'cutStrip', icon: Scissors, label: 'Cut Strip', shortcut: 'X' },
+  { type: 'drillCut', icon: Circle, label: 'Drill Cut', shortcut: 'X' },
+  { type: 'sliceCut', icon: Minus, label: 'Slice Cut', shortcut: 'S' },
 ];
 
 export const Toolbar = () => {

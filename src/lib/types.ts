@@ -85,13 +85,31 @@ export type ComponentPin = {
   extended: number; // Extra holes for leg extension
 };
 
+export type CutType = 'drill' | 'slice';
+
+export type Cut = {
+  col: number; // Integer for drill cuts, half-integer (x.5) for slice cuts
+  type: CutType;
+};
+
 export type Strip = {
   id: string;
   row: number;
   startCol: number;
   endCol: number;
   netId?: string;
-  breaks: number[]; // Column positions where strip is broken
+  breaks: number[]; // Column positions where strip is broken (legacy - for backward compatibility)
+  cuts?: Cut[]; // New cuts with type information
+  pcbId?: string; // Which PCB this strip belongs to (undefined = main PCB for backward compatibility)
+};
+
+export type PCB = {
+  id: string;
+  name: string;
+  rows: number;
+  cols: number;
+  position: GridPosition; // Position on the main board grid
+  isMain: boolean; // Main PCB cannot be deleted
 };
 
 export type Wire = {
@@ -150,7 +168,8 @@ export type ToolType =
   | 'pan'
   | 'placeComponent'
   | 'routeWire'
-  | 'cutStrip'
+  | 'drillCut'
+  | 'sliceCut'
   | 'linkStrip'
   | 'extendLeg';
 
@@ -167,6 +186,7 @@ export type ProjectData = {
     rows: number;
     cols: number;
   };
+  pcbs?: PCB[]; // Multiple PCBs (optional for backward compatibility)
   components: Component[];
   strips: Strip[];
   wires: Wire[];
@@ -195,6 +215,7 @@ export type StripboardState = {
   // Board configuration
   rows: number;
   cols: number;
+  pcbs: PCB[]; // Multiple PCBs (main + additional)
 
   // Elements
   components: Component[];

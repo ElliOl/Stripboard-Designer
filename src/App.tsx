@@ -98,7 +98,10 @@ function App() {
           setActiveTool('routeWire');
           break;
         case 'x':
-          setActiveTool('cutStrip');
+          setActiveTool('drillCut');
+          break;
+        case 's':
+          setActiveTool('sliceCut');
           break;
         case 'r':
           // Rotate selected components
@@ -189,8 +192,10 @@ function StatusBar() {
     pan: 'Drag to pan · Scroll to zoom · Shift+scroll pan Y · Cmd+scroll pan X · H help',
     routeWire:
       'Click to place wire points · Click same point twice to finish · Esc to cancel · H help',
-    cutStrip:
-      'Click on the board to toggle a cut in the copper strip at that position · H help',
+    drillCut:
+      'Click on the board to toggle a drill cut in the copper strip at that position · H help',
+    sliceCut:
+      'Click between two holes to create a thin slice cut in the copper strip · H help',
     placeComponent: 'Drag a component from the library panel onto the board · H help',
     linkStrip: 'Click to link strip segments · H help',
     extendLeg: 'Click a component pin to extend its leg · H help',
@@ -200,7 +205,8 @@ function StatusBar() {
     select: 'Select',
     pan: 'Pan',
     routeWire: 'Route Wire',
-    cutStrip: 'Cut Strip',
+    drillCut: 'Drill Cut',
+    sliceCut: 'Slice Cut',
     placeComponent: 'Place',
     linkStrip: 'Link',
     extendLeg: 'Extend',

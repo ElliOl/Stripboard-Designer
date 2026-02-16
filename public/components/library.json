@@ -379,7 +379,7 @@
   {
     "id": "trimpot",
     "name": "Trim Pot (Side Adjust)",
-    "category": "Passive",
+    "category": "Interface",
     "footprint": {
       "type": "TrimPot",
       "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
@@ -396,7 +396,7 @@
   {
     "id": "trimpot-top",
     "name": "Trim Pot (Top Adjust)",
-    "category": "Passive",
+    "category": "Interface",
     "footprint": {
       "type": "TrimPotTop",
       "dimensions": { "rows": 2, "cols": 3, "pitch": 2.54 }
@@ -413,7 +413,7 @@
   {
     "id": "potentiometer",
     "name": "Potentiometer",
-    "category": "Passive",
+    "category": "Interface",
     "footprint": {
       "type": "SIP",
       "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
@@ -686,7 +686,7 @@
   {
     "id": "encoder",
     "name": "Rotary Encoder",
-    "category": "Connector",
+    "category": "Interface",
     "footprint": {
       "type": "SIP",
       "dimensions": { "rows": 1, "cols": 5, "pitch": 2.54 }
@@ -706,7 +706,7 @@
   {
     "id": "switch-spdt",
     "name": "Switch (SPDT)",
-    "category": "Connector",
+    "category": "Interface",
     "footprint": {
       "type": "SIP",
       "dimensions": { "rows": 1, "cols": 3, "pitch": 2.54 }
@@ -723,7 +723,7 @@
   {
     "id": "switch-dpdt",
     "name": "Switch (DPDT)",
-    "category": "Connector",
+    "category": "Interface",
     "footprint": {
       "type": "SIP",
       "dimensions": { "rows": 2, "cols": 3, "pitch": 2.54 }
@@ -743,7 +743,7 @@
   {
     "id": "button-tact",
     "name": "Tact Button",
-    "category": "Connector",
+    "category": "Interface",
     "footprint": {
       "type": "TactSwitch",
       "dimensions": { "rows": 2, "cols": 2, "pitch": 2.54 }
@@ -761,7 +761,7 @@
   {
     "id": "button-block",
     "name": "Push Button (2-pin)",
-    "category": "Connector",
+    "category": "Interface",
     "footprint": {
       "type": "SIP",
       "dimensions": { "rows": 1, "cols": 2, "pitch": 2.54 }
@@ -778,7 +778,7 @@
   {
     "id": "header-1x2",
     "name": "Pin Header 1x2",
-    "category": "Connector",
+    "category": "Interface",
     "footprint": {
       "type": "SIP",
       "dimensions": { "rows": 1, "cols": 2, "pitch": 2.54 }
@@ -794,7 +794,7 @@
   {
     "id": "header-1x4",
     "name": "Pin Header 1x4",
-    "category": "Connector",
+    "category": "Interface",
     "footprint": {
       "type": "SIP",
       "dimensions": { "rows": 1, "cols": 4, "pitch": 2.54 }

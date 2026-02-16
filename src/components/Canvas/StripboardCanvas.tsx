@@ -1,9 +1,10 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { Stage, Layer, Line, Circle, Group, Rect } from 'react-konva';
 import type { KonvaEventObject } from 'konva/lib/Node';
-import type { GridPosition, RatsNestConnection, Component as ComponentType, Wire as WireType, ComponentDefinition } from '@/lib/types';
+import type { GridPosition, RatsNestConnection, Component as ComponentType, Wire as WireType, ComponentDefinition, Strip as StripType } from '@/lib/types';
 import { Grid } from './Grid';
 import { Strip } from './Strip';
+import { CutMarker } from './CutMarker';
 import { Component } from './Component';
 import { Wire } from './Wire';
 import { ReferenceImage, REF_IMAGE_ID } from './ReferenceImage';
@@ -75,6 +76,7 @@ type InteractionState =
   | {
       type: 'cutDragging';
       mode: 'add' | 'remove';
+      cutType: 'drill' | 'slice';
       lastGridRow: number;
       lastGridCol: number;
       visitedPositions: Set<string>; // track "row:col" strings to avoid double-toggling
@@ -103,6 +105,7 @@ export const StripboardCanvas = () => {
   const components = useStripboardStore((s) => s.components);
   const wires = useStripboardStore((s) => s.wires);
   const nets = useStripboardStore((s) => s.nets);
+  const pcbs = useStripboardStore((s) => s.pcbs);
   const zoom = useStripboardStore((s) => s.zoom);
   const pan = useStripboardStore((s) => s.pan);
   const rows = useStripboardStore((s) => s.rows);
@@ -174,7 +177,7 @@ export const StripboardCanvas = () => {
 
   // ─── Connectivity Analysis (Deferred) ────────────────────────
   const [connectivity, setConnectivity] = useState(() =>
-    analyzeConnectivity(components, strips, wires, nets)
+    analyzeConnectivity(components, strips, wires, nets, pcbs)
   );
 
   useEffect(() => {
@@ -195,12 +198,12 @@ export const StripboardCanvas = () => {
     };
 
     const id = scheduleUpdate(() => {
-      const result = analyzeConnectivity(components, strips, wires, nets);
+      const result = analyzeConnectivity(components, strips, wires, nets, pcbs);
       setConnectivity(result);
     });
 
     return () => cancelUpdate(id);
-  }, [components, strips, wires, nets]);
+  }, [components, strips, wires, nets, pcbs]);
 
   // ─── Ratsnest (deferred or realtime based on setting) ────────
   const [ratsNest, setRatsNest] = useState<RatsNestConnection[]>([]);
@@ -208,13 +211,13 @@ export const StripboardCanvas = () => {
   // Realtime ratsnest (synchronous useMemo)
   const realtimeRatsNestValue = useMemo(() => {
     if (!realtimeRatsnest || nets.length === 0) return [];
-    const allConnections = calculateRatsNest(components, strips, wires, nets);
+    const allConnections = calculateRatsNest(components, strips, wires, nets, pcbs);
     // Filter out connections for hidden nets
     return allConnections.filter((conn) => {
       const net = nets.find((n) => n.id === conn.netId);
       return net?.visible !== false;
     });
-  }, [realtimeRatsnest, components, strips, wires, nets]);
+  }, [realtimeRatsnest, components, strips, wires, nets, pcbs]);
 
   // Deferred ratsnest (async)
   useEffect(() => {
@@ -245,7 +248,7 @@ export const StripboardCanvas = () => {
     };
 
     const id = scheduleUpdate(() => {
-      const allConnections = calculateRatsNest(components, strips, wires, nets);
+      const allConnections = calculateRatsNest(components, strips, wires, nets, pcbs);
       // Filter out connections for hidden nets
       const visible = allConnections.filter((conn) => {
         const net = nets.find((n) => n.id === conn.netId);
@@ -255,7 +258,7 @@ export const StripboardCanvas = () => {
     });
 
     return () => cancelUpdate(id);
-  }, [realtimeRatsnest, realtimeRatsNestValue, components, strips, wires, nets]);
+  }, [realtimeRatsnest, realtimeRatsNestValue, components, strips, wires, nets, pcbs]);
 
   // Net color lookup
   const netColorMap = useMemo(() => {
@@ -472,11 +475,22 @@ export const StripboardCanvas = () => {
   );
 
   const clampToBoard = useCallback(
-    (pos: GridPosition): GridPosition => ({
-      row: Math.max(0, Math.min(rows - 1, pos.row)),
-      col: Math.max(0, Math.min(cols - 1, pos.col)),
-    }),
-    [rows, cols]
+    (pos: GridPosition): GridPosition | null => {
+      // Check if position is within any PCB
+      for (const pcb of pcbs) {
+        const localRow = pos.row - pcb.position.row;
+        const localCol = pos.col - pcb.position.col;
+        
+        if (localRow >= 0 && localRow < pcb.rows && localCol >= 0 && localCol < pcb.cols) {
+          // Position is within this PCB - return the world position
+          return pos;
+        }
+      }
+      
+      // Not on any PCB - return null to indicate invalid position
+      return null;
+    },
+    [pcbs]
   );
 
   const getGridFromPointer = useCallback(
@@ -484,7 +498,8 @@ export const StripboardCanvas = () => {
       const stage = e.target.getStage();
       const pointer = stage?.getPointerPosition();
       if (!pointer) return null;
-      return clampToBoard(screenToGrid(pointer.x, pointer.y));
+      const gridPos = screenToGrid(pointer.x, pointer.y);
+      return clampToBoard(gridPos);
     },
     [screenToGrid, clampToBoard]
   );
@@ -534,11 +549,34 @@ export const StripboardCanvas = () => {
 
       // Check cuts — each cut is a single point (row, col)
       for (const strip of strips) {
-        for (const breakCol of strip.breaks) {
-          const px = breakCol * GRID_PITCH;
-          const py = strip.row * GRID_PITCH;
+        // Find the PCB this strip belongs to for world coordinate conversion
+        const pcb = pcbs.find(p => strip.pcbId === p.id) || pcbs.find(p => p.isMain);
+        const pcbPosition = pcb ? pcb.position : { row: 0, col: 0 };
+        const worldRow = strip.row + pcbPosition.row;
+        
+        // Merge cuts array with old breaks array using Map for deduplication
+        const cutsArray = strip.cuts || [];
+        const breaksArray = strip.breaks || [];
+        
+        const cutsByCol = new Map();
+        cutsArray.forEach(cut => {
+          cutsByCol.set(cut.col, cut);
+        });
+        breaksArray.forEach(col => {
+          if (!cutsByCol.has(col)) {
+            cutsByCol.set(col, { col, type: 'drill' as const });
+          }
+        });
+        
+        const allCuts = Array.from(cutsByCol.values());
+        
+        for (const cut of allCuts) {
+          // Use world coordinates for position check
+          const px = cut.col * GRID_PITCH;
+          const py = worldRow * GRID_PITCH;
           if (px >= minX && px <= maxX && py >= minY && py <= maxY) {
-            ids.push(`cut-${strip.row}-${breakCol}`);
+            // Cut IDs use world coordinates
+            ids.push(`cut-${worldRow}-${cut.col}`);
           }
         }
       }
@@ -736,40 +774,60 @@ export const StripboardCanvas = () => {
     }
 
     // ── Cut tool: start cut dragging ─────────────────────
-    if (activeTool === 'cutStrip') {
+    if (activeTool === 'drillCut' || activeTool === 'sliceCut') {
       const stage = stageRef.current;
       const pointer = stage?.getPointerPosition();
       if (!pointer) return;
 
       const grid = clampToBoard(screenToGrid(pointer.x, pointer.y));
+      if (!grid) return;
       
-      // Check if there's already a cut at this position
-      const strip = strips.find(
-        (s) => s.row === grid.row && grid.col >= s.startCol && grid.col <= s.endCol
-      );
+      const cutType = activeTool === 'drillCut' ? 'drill' : 'slice';
+      
+      // For slice cuts, position between holes (col + 0.5)
+      // For drill cuts, position on the hole (integer col)
+      const cutCol = cutType === 'slice' ? grid.col + 0.5 : grid.col;
+      
+      // Find which PCB and strip this position belongs to
+      let strip: StripType | undefined;
+      for (const pcb of pcbs) {
+        const localRow = grid.row - pcb.position.row;
+        const localCol = grid.col - pcb.position.col;
+        
+        // Check if position is within this PCB's bounds
+        if (localRow >= 0 && localRow < pcb.rows && localCol >= 0 && localCol < pcb.cols) {
+          // Find the strip on this PCB
+          const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
+          strip = strips.find((s) => s.id === stripId);
+          break;
+        }
+      }
+      
       if (!strip) return;
 
       // Save history once at the start of the drag
       saveToHistory();
       
       // Determine mode: if there's already a cut here, we'll be removing; otherwise adding
-      const hasCut = strip.breaks.includes(grid.col);
+      const cuts = strip.cuts || [];
+      const hasCut = cuts.some(c => c.col === cutCol);
       const mode = hasCut ? 'remove' : 'add';
       
       // Apply the first cut/remove
       if (mode === 'add') {
-        addCut(grid.row, grid.col);
+        addCut(grid.row, cutCol, cutType);
       } else {
-        removeCut(grid.row, grid.col);
+        removeCut(grid.row, cutCol);
       }
       
       // Set up tracking for drag
       const visitedPositions = new Set<string>();
-      visitedPositions.add(`${grid.row}:${grid.col}`);
+      visitedPositions.add(`${grid.row}:${cutCol}`);
       
       interactionRef.current = {
         type: 'cutDragging',
         mode,
+        cutType,
         lastGridRow: grid.row,
         lastGridCol: grid.col,
         visitedPositions,
@@ -783,7 +841,7 @@ export const StripboardCanvas = () => {
     const evt = e.evt;
 
     // Track cursor grid position only for tools that need it
-    if (activeTool === 'cutStrip' || activeTool === 'routeWire') {
+    if (activeTool === 'drillCut' || activeTool === 'sliceCut' || activeTool === 'routeWire') {
       const grid = getGridFromPointer(e);
       if (grid) {
         // Only update if position actually changed
@@ -927,24 +985,38 @@ export const StripboardCanvas = () => {
     // ── Active CUT DRAGGING → apply cuts/removals as we drag ───
     if (interaction.type === 'cutDragging') {
       const grid = clampToBoard(screenToGrid(pointer.x, pointer.y));
+      if (!grid) return;
+      
+      // Calculate cut position based on type
+      const cutCol = interaction.cutType === 'slice' ? grid.col + 0.5 : grid.col;
       
       // Only process if we've moved to a new grid position
       if (grid.row !== interaction.lastGridRow || grid.col !== interaction.lastGridCol) {
-        const posKey = `${grid.row}:${grid.col}`;
+        const posKey = `${grid.row}:${cutCol}`;
         
         // Only apply if we haven't visited this position yet
         if (!interaction.visitedPositions.has(posKey)) {
-          // Check if this position is on a strip
-          const strip = strips.find(
-            (s) => s.row === grid.row && grid.col >= s.startCol && grid.col <= s.endCol
-          );
+          // Find which PCB and strip this position belongs to
+          let strip: StripType | undefined;
+          for (const pcb of pcbs) {
+            const localRow = grid.row - pcb.position.row;
+            const localCol = grid.col - pcb.position.col;
+            
+            // Check if position is within this PCB's bounds
+            if (localRow >= 0 && localRow < pcb.rows && localCol >= 0 && localCol < pcb.cols) {
+              // Find the strip on this PCB
+              const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
+              strip = strips.find((s) => s.id === stripId);
+              break;
+            }
+          }
           
           if (strip) {
             // Apply the cut/remove based on the initial mode
             if (interaction.mode === 'add') {
-              addCut(grid.row, grid.col);
+              addCut(grid.row, cutCol, interaction.cutType);
             } else {
-              removeCut(grid.row, grid.col);
+              removeCut(grid.row, cutCol);
             }
             
             // Mark this position as visited
@@ -1039,6 +1111,7 @@ export const StripboardCanvas = () => {
     const pointer = stage?.getPointerPosition();
     if (!pointer) return;
     const grid = clampToBoard(screenToGrid(pointer.x, pointer.y));
+    if (!grid) return;
 
     // Wire routing
     if (activeTool === 'routeWire') {
@@ -1062,7 +1135,7 @@ export const StripboardCanvas = () => {
     }
 
     // Cut strip — now fully handled by mousedown/mousemove/mouseup
-    if (activeTool === 'cutStrip') {
+    if (activeTool === 'drillCut' || activeTool === 'sliceCut') {
       // No-op: cut dragging is handled in mouse down/move/up
       return;
     }
@@ -1313,24 +1386,77 @@ export const StripboardCanvas = () => {
 
           {/* Copper strips */}
           {layerVisibility.strips &&
-            visibleStrips.map((s) => (
-              <Strip
-                key={s.id}
-                strip={s}
-                showCuts={layerVisibility.cuts}
-                showNetHighlight={layerVisibility.nets}
-                segmentNets={connectivity.segmentNets}
-                segmentErrors={layerVisibility.errors ? connectivity.segmentErrors : undefined}
-                netColorMap={netColorMap}
-                highlightedNetId={highlightedNetId}
-                stripColor={stripColor}
-                netHighlightMode={netHighlightMode}
-                components={components}
-                wires={wires}
-                wireNets={connectivity.wireNets}
-                selectedItems={selectedItems}
-              />
-            ))}
+            visibleStrips.map((s) => {
+              // Find the PCB this strip belongs to
+              const pcb = pcbs.find(p => s.pcbId === p.id) || pcbs.find(p => p.isMain);
+              const pcbPosition = pcb ? pcb.position : { row: 0, col: 0 };
+              
+              return (
+                <Strip
+                  key={s.id}
+                  strip={s}
+                  showCuts={layerVisibility.cuts}
+                  showNetHighlight={layerVisibility.nets}
+                  segmentNets={connectivity.segmentNets}
+                  segmentErrors={layerVisibility.errors ? connectivity.segmentErrors : undefined}
+                  netColorMap={netColorMap}
+                  highlightedNetId={highlightedNetId}
+                  stripColor={stripColor}
+                  netHighlightMode={netHighlightMode}
+                  components={components}
+                  wires={wires}
+                  wireNets={connectivity.wireNets}
+                  pcbPosition={pcbPosition}
+                />
+              );
+            })}
+        </Layer>
+
+        {/* Layer 1b: Interactive cut markers (must be listening for selection/dragging) */}
+        <Layer>
+          {layerVisibility.strips &&
+            visibleStrips.map((s) => {
+              // Find the PCB this strip belongs to
+              const pcb = pcbs.find(p => s.pcbId === p.id) || pcbs.find(p => p.isMain);
+              const pcbPosition = pcb ? pcb.position : { row: 0, col: 0 };
+              
+              // Convert strip's local row to world row
+              const worldRow = s.row + pcbPosition.row;
+              
+              // Merge cuts array with old breaks array for backward compatibility
+              const cutsArray = s.cuts || [];
+              const breaksArray = s.breaks || [];
+              
+              const cutsByCol = new Map();
+              cutsArray.forEach(cut => {
+                cutsByCol.set(cut.col, cut);
+              });
+              breaksArray.forEach(col => {
+                if (!cutsByCol.has(col)) {
+                  cutsByCol.set(col, { col, type: 'drill' as const });
+                }
+              });
+              
+              const allCuts = Array.from(cutsByCol.values());
+              
+              return allCuts.map((cut: any) => {
+                // Cut IDs use world coordinates
+                const cutId = `cut-${worldRow}-${cut.col}`;
+                const isSelected = selectedItems.includes(cutId);
+                
+                return (
+                  <CutMarker
+                    key={cutId}
+                    cut={cut}
+                    stripRow={s.row}
+                    cutId={cutId}
+                    isSelected={isSelected}
+                    showCuts={layerVisibility.cuts}
+                    pcbPosition={pcbPosition}
+                  />
+                );
+              });
+            }).flat()}
         </Layer>
 
         {/* Layer 2a: Cached background components (dimmed, unselected) */}
@@ -1604,30 +1730,49 @@ export const StripboardCanvas = () => {
           ))}
 
           {/* Cut tool cursor indicator */}
-          {cursorGridPos && activeTool === 'cutStrip' && (
+          {cursorGridPos && (activeTool === 'drillCut' || activeTool === 'sliceCut') && (
             <Group listening={false}>
-              <Line
-                points={[
-                  cursorGridPos.col * GRID_PITCH - 5,
-                  cursorGridPos.row * GRID_PITCH - 5,
-                  cursorGridPos.col * GRID_PITCH + 5,
-                  cursorGridPos.row * GRID_PITCH + 5,
-                ]}
-                stroke="#ef4444"
-                strokeWidth={2}
-                opacity={0.6}
-              />
-              <Line
-                points={[
-                  cursorGridPos.col * GRID_PITCH + 5,
-                  cursorGridPos.row * GRID_PITCH - 5,
-                  cursorGridPos.col * GRID_PITCH - 5,
-                  cursorGridPos.row * GRID_PITCH + 5,
-                ]}
-                stroke="#ef4444"
-                strokeWidth={2}
-                opacity={0.6}
-              />
+              {activeTool === 'drillCut' && (
+                // Drill cut: X marks the spot ON the hole
+                <>
+                  <Line
+                    points={[
+                      cursorGridPos.col * GRID_PITCH - 5,
+                      cursorGridPos.row * GRID_PITCH - 5,
+                      cursorGridPos.col * GRID_PITCH + 5,
+                      cursorGridPos.row * GRID_PITCH + 5,
+                    ]}
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                    opacity={0.6}
+                  />
+                  <Line
+                    points={[
+                      cursorGridPos.col * GRID_PITCH + 5,
+                      cursorGridPos.row * GRID_PITCH - 5,
+                      cursorGridPos.col * GRID_PITCH - 5,
+                      cursorGridPos.row * GRID_PITCH + 5,
+                    ]}
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                    opacity={0.6}
+                  />
+                </>
+              )}
+              {activeTool === 'sliceCut' && (
+                // Slice cut: vertical line BETWEEN holes
+                <Line
+                  points={[
+                    (cursorGridPos.col + 0.5) * GRID_PITCH,
+                    cursorGridPos.row * GRID_PITCH - 10,
+                    (cursorGridPos.col + 0.5) * GRID_PITCH,
+                    cursorGridPos.row * GRID_PITCH + 10,
+                  ]}
+                  stroke="#ef4444"
+                  strokeWidth={2}
+                  opacity={0.8}
+                />
+              )}
             </Group>
           )}
 
@@ -1723,7 +1868,8 @@ function getCursorForTool(tool: string): string {
     case 'select':
       return 'default';
     case 'routeWire':
-    case 'cutStrip':
+    case 'drillCut':
+    case 'sliceCut':
       return 'crosshair';
     default:
       return 'default';

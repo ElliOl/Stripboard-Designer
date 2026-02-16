@@ -6,7 +6,7 @@ import type { ComponentDefinition } from '@/lib/types';
 const categoryIcons: Record<string, React.ElementType> = {
   IC: Cpu,
   Passive: Zap,
-  Connector: Radio,
+  Interface: Radio,
   Discrete: CircuitBoard,
   Custom: Box,
 };
@@ -14,7 +14,7 @@ const categoryIcons: Record<string, React.ElementType> = {
 const categoryColors: Record<string, string> = {
   IC: '#c8ff2e',
   Passive: '#c8ff2e',
-  Connector: '#c8ff2e',
+  Interface: '#c8ff2e',
   Discrete: '#c8ff2e',
   Custom: '#a78bfa',
 };
@@ -36,9 +36,7 @@ export const ComponentLibrary = () => {
       .then((data: ComponentDefinition[]) => {
         loadComponentDefinitions(data);
         setLibraryLoaded(true);
-        // Expand all categories by default
-        const categories = [...new Set(data.map(c => c.category))];
-        setExpandedCategories(new Set(categories));
+        // Categories start collapsed by default
       })
       .catch((err) =>
         console.error('Failed to load component library:', err)

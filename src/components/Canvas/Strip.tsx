@@ -1,20 +1,18 @@
 import { memo } from 'react';
-import { Rect, Group, Circle, Shape } from 'react-konva';
-import type { Strip as StripType, Component, Wire, NetHighlightMode } from '@/lib/types';
+import { Rect, Group, Shape } from 'react-konva';
+import type { Strip as StripType, Component, Wire, NetHighlightMode, Cut } from '@/lib/types';
 import { getConnectionRanges } from '@/lib/strip-ranges';
 
 const GRID_PITCH = 25.4;
 const STRIP_HEIGHT = 16;
-const CUT_CIRCLE_RADIUS = 5;
-
 
 /** Adjust hex color brightness by a factor (-1 to 1) */
 function adjustBrightness(hex: string, factor: number): string {
-  const num = parseInt(hex.replace('#', ''), 16);
-  const r = Math.max(0, Math.min(255, ((num >> 16) & 0xff) * (1 + factor)));
-  const g = Math.max(0, Math.min(255, ((num >> 8) & 0xff) * (1 + factor)));
-  const b = Math.max(0, Math.min(255, (num & 0xff) * (1 + factor)));
-  return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
+  const c = hex.replace('#', '');
+  const r = Math.round(parseInt(c.substring(0, 2), 16) * (1 - factor));
+  const g = Math.round(parseInt(c.substring(2, 4), 16) * (1 - factor));
+  const b = Math.round(parseInt(c.substring(4, 6), 16) * (1 - factor));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
 interface StripProps {
@@ -32,23 +30,115 @@ interface StripProps {
   components?: Component[]; // Needed for connection mode
   wires?: Wire[]; // Needed for connection mode
   wireNets?: Map<string, string | null>; // Detected net for each wire
-  selectedItems?: string[]; // Currently selected item IDs (for cut selection)
+  pcbPosition?: { row: number; col: number }; // PCB offset position
 }
 
+// Custom comparison for Strip to prevent unnecessary re-renders
+const stripPropsAreEqual = (prevProps: StripProps, nextProps: StripProps): boolean => {
+  // If strip identity changed, re-render
+  if (prevProps.strip.id !== nextProps.strip.id) return false;
+  
+  // If strip properties changed, re-render
+  if (
+    prevProps.strip.row !== nextProps.strip.row ||
+    prevProps.strip.startCol !== nextProps.strip.startCol ||
+    prevProps.strip.endCol !== nextProps.strip.endCol ||
+    prevProps.strip.breaks?.length !== nextProps.strip.breaks?.length ||
+    prevProps.strip.cuts?.length !== nextProps.strip.cuts?.length ||
+    (prevProps.strip.breaks && nextProps.strip.breaks && 
+      !prevProps.strip.breaks.every((b, i) => b === nextProps.strip.breaks![i])) ||
+    (prevProps.strip.cuts && nextProps.strip.cuts && 
+      !prevProps.strip.cuts.every((c, i) => c.col === nextProps.strip.cuts![i].col && c.type === nextProps.strip.cuts![i].type))
+  ) {
+    return false;
+  }
+  
+  // If visibility settings changed, re-render
+  if (
+    prevProps.showCuts !== nextProps.showCuts ||
+    prevProps.showNetHighlight !== nextProps.showNetHighlight ||
+    prevProps.stripColor !== nextProps.stripColor ||
+    prevProps.netHighlightMode !== nextProps.netHighlightMode
+  ) {
+    return false;
+  }
+  
+  // If highlighting changed AND this strip is affected, re-render
+  if (prevProps.highlightedNetId !== nextProps.highlightedNetId) {
+    // Check if any segment of this strip has the highlighted net
+    const segments = getStripSegments(prevProps.strip);
+    let wasRelevant = false;
+    let isRelevant = false;
+    
+    for (let i = 0; i < segments.length; i++) {
+      const segKey = `${prevProps.strip.id}:${i}`;
+      const prevNetId = prevProps.segmentNets?.get(segKey);
+      const nextNetId = nextProps.segmentNets?.get(segKey);
+      
+      if (prevNetId === prevProps.highlightedNetId) wasRelevant = true;
+      if (nextNetId === nextProps.highlightedNetId) isRelevant = true;
+    }
+    
+    // Only re-render if this strip is or was relevant to highlighting
+    if (wasRelevant || isRelevant || !prevProps.highlightedNetId || !nextProps.highlightedNetId) {
+      return false;
+    }
+  }
+  
+  // If segment nets or errors changed, re-render
+  if (prevProps.segmentNets !== nextProps.segmentNets) return false;
+  if (prevProps.segmentErrors !== nextProps.segmentErrors) return false;
+  
+  // Otherwise, props are equal
+  return true;
+};
+
 function getStripSegments(strip: StripType): Array<{ startCol: number; endCol: number }> {
-  if (!strip.breaks || strip.breaks.length === 0) {
+  // Merge cuts array with old breaks array using Map for deduplication
+  const cutsArray = strip.cuts || [];
+  const breaksArray = strip.breaks || [];
+  
+  const cutsByCol = new Map<number, Cut>();
+  cutsArray.forEach(cut => {
+    cutsByCol.set(cut.col, cut);
+  });
+  breaksArray.forEach(col => {
+    if (!cutsByCol.has(col)) {
+      cutsByCol.set(col, { col, type: 'drill' as const });
+    }
+  });
+  
+  const allCuts = Array.from(cutsByCol.values());
+  
+  if (allCuts.length === 0) {
     return [{ startCol: strip.startCol, endCol: strip.endCol }];
   }
 
   const segments: Array<{ startCol: number; endCol: number }> = [];
-  const sortedBreaks = [...strip.breaks].sort((a, b) => a - b);
-
+  
+  // Separate drill and slice cuts - they break strips differently
+  // Drill cuts: break at integer column (hole is destroyed, breaks before and after)
+  // Slice cuts: break at half-integer column (between two holes, both holes remain)
+  const drillCols = allCuts.filter(c => c.type === 'drill').map(c => c.col);
+  const sliceCols = allCuts.filter(c => c.type === 'slice').map(c => c.col);
+  
+  // Create a set of all positions that are drilled (to skip them)
+  const drilledPositions = new Set(drillCols);
+  
+  // For drill cuts at column N: segment ends at N-1, next starts at N+1 (skip N)
+  // For slice cuts at column N.5: segment ends at N, next starts at N+1
+  const allBreaks: Array<{ breakBefore: number; isDrill: boolean }> = [
+    ...drillCols.map(col => ({ breakBefore: col, isDrill: true })), // drill at 5 → break before 5, skip to 6
+    ...sliceCols.map(col => ({ breakBefore: Math.ceil(col), isDrill: false })) // slice at 5.5 → break before 6
+  ].sort((a, b) => a.breakBefore - b.breakBefore);
+  
   let start = strip.startCol;
-  for (const breakCol of sortedBreaks) {
-    if (breakCol > start) {
-      segments.push({ startCol: start, endCol: breakCol - 1 });
+  for (const { breakBefore, isDrill } of allBreaks) {
+    if (breakBefore > start) {
+      segments.push({ startCol: start, endCol: breakBefore - 1 });
     }
-    start = breakCol + 1;
+    // For drill cuts, skip the drilled column; for slice cuts, continue from the break
+    start = isDrill ? breakBefore + 1 : breakBefore;
   }
 
   if (start <= strip.endCol) {
@@ -58,7 +148,7 @@ function getStripSegments(strip: StripType): Array<{ startCol: number; endCol: n
   return segments;
 }
 
-export const Strip = memo(({
+const StripImpl = ({
   strip,
   showCuts = false,
   showNetHighlight = false,
@@ -71,13 +161,13 @@ export const Strip = memo(({
   components = [],
   wires = [],
   wireNets,
-  selectedItems = [],
+  pcbPosition = { row: 0, col: 0 },
 }: StripProps) => {
   const y = strip.row * GRID_PITCH - STRIP_HEIGHT / 2;
   const segments = getStripSegments(strip);
 
   return (
-    <Group>
+    <Group x={pcbPosition.col * GRID_PITCH} y={pcbPosition.row * GRID_PITCH}>
       {/* Render each segment as its own rect so cuts split net colours */}
       {segments.map((segment, segIdx) => {
         const segKey = `${strip.id}:${segIdx}`;
@@ -89,6 +179,12 @@ export const Strip = memo(({
         const isSegHighlighted =
           !!highlightedNetId && segNetId === highlightedNetId;
         const isDimmed = !!highlightedNetId && !isSegHighlighted;
+
+        // CRITICAL PERFORMANCE OPTIMIZATION:
+        // Skip rendering dimmed segments entirely to avoid GPU compositing cost
+        if (isDimmed) {
+          return null;
+        }
 
         const hlColor =
           isSegHighlighted && netColorMap
@@ -117,7 +213,7 @@ export const Strip = memo(({
                 height={STRIP_HEIGHT}
                 fill={stripColor}
                 opacity={0.8}
-                stroke={adjustBrightness(stripColor, -0.2)}
+                stroke={adjustBrightness(stripColor, 0.35)}
                 strokeWidth={0.5}
                 cornerRadius={1}
                 shadowColor="#000"
@@ -138,7 +234,7 @@ export const Strip = memo(({
                     height={STRIP_HEIGHT}
                     fill={netColor || stripColor}
                     opacity={0.85}
-                    stroke={netColor || adjustBrightness(stripColor, -0.2)}
+                    stroke={netColor || adjustBrightness(stripColor, 0.35)}
                     strokeWidth={1.5}
                     cornerRadius={1}
                     shadowColor={netColor || '#000'}
@@ -160,7 +256,7 @@ export const Strip = memo(({
               ? '#dc2626'
               : netColor
                 ? netColor
-                : adjustBrightness(stripColor, -0.2);
+                : adjustBrightness(stripColor, 0.35);
 
         const segX = (segment.startCol - 0.4) * GRID_PITCH;
         const segW = (segment.endCol - segment.startCol + 0.8) * GRID_PITCH;
@@ -174,8 +270,7 @@ export const Strip = memo(({
             height={STRIP_HEIGHT}
             fill={fillColor}
             opacity={
-              isDimmed ? 0.25
-                : isSegHighlighted ? 1
+              isSegHighlighted ? 1
                 : netColor ? 0.85
                 : 0.8
             }
@@ -201,71 +296,119 @@ export const Strip = memo(({
                 : 0.2
             }
             listening={false}
+            perfectDrawEnabled={false}
           />
         );
       })}
 
       {/* Holes punched in the strip - batched into single Shape */}
+      {/* Skip holes that have drill cuts on them (drill cuts destroy the hole) */}
       <Shape
         sceneFunc={(ctx) => {
+          // Merge cuts array with old breaks array using Map for deduplication
+          const cutsArray = strip.cuts || [];
+          const breaksArray = strip.breaks || [];
+          
+          const cutsByCol = new Map<number, Cut>();
+          cutsArray.forEach(cut => {
+            cutsByCol.set(cut.col, cut);
+          });
+          breaksArray.forEach(col => {
+            if (!cutsByCol.has(col)) {
+              cutsByCol.set(col, { col, type: 'drill' as const });
+            }
+          });
+          
+          const drillCutCols = new Set(
+            Array.from(cutsByCol.values())
+              .filter(c => c.type === 'drill')
+              .map(c => c.col)
+          );
+          
           ctx.fillStyle = '#1c1c20';
           for (let col = strip.startCol; col <= strip.endCol; col++) {
-            ctx.beginPath();
-            ctx.arc(col * GRID_PITCH, strip.row * GRID_PITCH, 3, 0, Math.PI * 2);
-            ctx.fill();
+            // Skip holes that have drill cuts (drill cuts destroy the hole)
+            if (!drillCutCols.has(col)) {
+              ctx.beginPath();
+              ctx.arc(col * GRID_PITCH, strip.row * GRID_PITCH, 3, 0, Math.PI * 2);
+              ctx.fill();
+            }
           }
         }}
         listening={false}
       />
 
-      {/* Break markers */}
-      {strip.breaks?.map((breakCol) => {
-        const cutId = `cut-${strip.row}-${breakCol}`;
-        const isCutSelected = selectedItems.includes(cutId);
-        return (
-          <Group key={`brk-${breakCol}`} name={`cut:${cutId}`}>
-            {/* Cut through the strip (always visible) */}
-            <Rect
-              x={breakCol * GRID_PITCH - 4}
-              y={y - 1}
-              width={8}
-              height={STRIP_HEIGHT + 2}
-              fill="#1c1c20"
-              listening={false}
-            />
-            {/* Invisible hit area for easier click targeting */}
-            <Circle
-              x={breakCol * GRID_PITCH}
-              y={strip.row * GRID_PITCH}
-              radius={10}
-              fill="transparent"
-              hitStrokeWidth={10}
-            />
-            {/* Circle cut indicator */}
-            <Circle
-              x={breakCol * GRID_PITCH}
-              y={strip.row * GRID_PITCH}
-              radius={isCutSelected ? CUT_CIRCLE_RADIUS + 1.5 : CUT_CIRCLE_RADIUS}
-              stroke={
-                isCutSelected
-                  ? '#c8ff2e'
-                  : showCuts
-                    ? '#ef4444'
-                    : '#38384a'
-              }
-              strokeWidth={isCutSelected ? 2.5 : showCuts ? 2 : 1}
-              fill="transparent"
-              opacity={isCutSelected ? 1 : showCuts ? 1 : 0.4}
-              shadowColor={isCutSelected ? '#c8ff2e' : undefined}
-              shadowBlur={isCutSelected ? 8 : 0}
-              shadowOpacity={isCutSelected ? 0.6 : 0}
-              listening={false}
-            />
-          </Group>
-        );
-      })}
+      {/* Visual cut marks through the strip (non-interactive) */}
+      {(() => {
+        // Merge cuts array with old breaks array for backward compatibility
+        // Old breaks (if not in cuts) should be treated as drill cuts
+        const cutsArray = strip.cuts || [];
+        const breaksArray = strip.breaks || [];
+        
+        // Create a map of all cuts by their column position for efficient lookup
+        const cutsByCol = new Map<number, Cut>();
+        cutsArray.forEach(cut => {
+          cutsByCol.set(cut.col, cut);
+        });
+        
+        // Add old breaks that aren't already in cuts array (treat as drill cuts)
+        breaksArray.forEach(col => {
+          if (!cutsByCol.has(col)) {
+            cutsByCol.set(col, { col, type: 'drill' as const });
+          }
+        });
+        
+        // Convert back to array and sort
+        const allCuts = Array.from(cutsByCol.values()).sort((a, b) => a.col - b.col);
+        
+        return allCuts.map((cut) => {
+          const isDrill = cut.type === 'drill';
+          const isSlice = cut.type === 'slice';
+          
+          // Validate: drill cuts should be at integer positions, slice cuts at half-integer
+          if (isDrill && !Number.isInteger(cut.col)) {
+            console.warn(`Invalid drill cut at fractional position ${cut.col}`);
+            return null;
+          }
+          if (isSlice && Number.isInteger(cut.col)) {
+            console.warn(`Invalid slice cut at integer position ${cut.col}`);
+            return null;
+          }
+          
+          return (
+            <Group key={`brk-${cut.col}`}>
+              {/* Cut through the strip - different widths and positions for drill vs slice */}
+              {isDrill && (
+                // Drill cut: wide cut centered on the hole
+                <Rect
+                  x={cut.col * GRID_PITCH - 4}
+                  y={y - 1}
+                  width={8}
+                  height={STRIP_HEIGHT + 2}
+                  fill="#1c1c20"
+                  listening={false}
+                />
+              )}
+              {isSlice && (
+                // Slice cut: thin cut between holes
+                <Rect
+                  x={cut.col * GRID_PITCH - 1}
+                  y={y - 1}
+                  width={2}
+                  height={STRIP_HEIGHT + 2}
+                  fill="#1c1c20"
+                  listening={false}
+                />
+              )}
+            </Group>
+          );
+        }).filter(Boolean);
+      })()}
     </Group>
   );
-});
+};
+
+// Export memoized strip with custom comparison
+export const Strip = memo(StripImpl, stripPropsAreEqual);
 
 Strip.displayName = 'Strip';

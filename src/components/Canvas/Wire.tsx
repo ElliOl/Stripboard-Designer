@@ -13,7 +13,51 @@ interface WireProps {
   highlightedNetId?: string | null;
 }
 
-export const Wire = memo(({ 
+// Custom comparison for Wire to prevent unnecessary re-renders
+const wirePropsAreEqual = (prevProps: WireProps, nextProps: WireProps): boolean => {
+  // If wire identity changed, re-render
+  if (prevProps.wire.id !== nextProps.wire.id) return false;
+  
+  // If selection changed, re-render
+  if (prevProps.isSelected !== nextProps.isSelected) return false;
+  
+  // If color or error state changed, re-render
+  if (
+    prevProps.wireColor !== nextProps.wireColor ||
+    prevProps.hasError !== nextProps.hasError
+  ) {
+    return false;
+  }
+  
+  // If highlighting changed AND this wire is affected, re-render
+  if (prevProps.highlightedNetId !== nextProps.highlightedNetId) {
+    const wasRelevant = prevProps.effectiveNetId === prevProps.highlightedNetId;
+    const isRelevant = nextProps.effectiveNetId === nextProps.highlightedNetId;
+    // Only re-render if this wire is or was relevant to highlighting
+    if (wasRelevant || isRelevant || !prevProps.highlightedNetId || !nextProps.highlightedNetId) {
+      return false;
+    }
+  }
+  
+  // If effective net changed, re-render
+  if (prevProps.effectiveNetId !== nextProps.effectiveNetId) return false;
+  
+  // If wire points changed, re-render
+  if (prevProps.wire.points.length !== nextProps.wire.points.length) return false;
+  for (let i = 0; i < prevProps.wire.points.length; i++) {
+    if (
+      prevProps.wire.points[i].row !== nextProps.wire.points[i].row ||
+      prevProps.wire.points[i].col !== nextProps.wire.points[i].col
+    ) {
+      return false;
+    }
+  }
+  
+  // Otherwise, props are equal
+  return true;
+};
+
+const WireImpl = ({ 
   wire, 
   isSelected, 
   wireColor, 
@@ -29,12 +73,11 @@ export const Wire = memo(({
   // Net highlighting
   const isNetHighlighted =
     !!highlightedNetId && effectiveNetId === highlightedNetId;
-  const isDimmed = !!highlightedNetId && !isNetHighlighted;
 
   return (
     <Group
       name={`wire:${wire.id}`}
-      opacity={isDimmed ? 0.2 : 1}
+      perfectDrawEnabled={false}
     >
       {/* Invisible wide line for easier click targeting */}
       <Line
@@ -73,6 +116,9 @@ export const Wire = memo(({
       ))}
     </Group>
   );
-});
+};
+
+// Export memoized wire with custom comparison
+export const Wire = memo(WireImpl, wirePropsAreEqual);
 
 Wire.displayName = 'Wire';

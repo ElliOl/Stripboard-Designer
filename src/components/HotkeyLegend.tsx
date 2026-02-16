@@ -12,7 +12,8 @@ export const HotkeyLegend = ({ isOpen, onClose }: HotkeyLegendProps) => {
     { category: 'Tools', items: [
       { key: 'V', description: 'Select tool' },
       { key: 'W', description: 'Route wire' },
-      { key: 'X', description: 'Cut strip' },
+      { key: 'X', description: 'Drill cut' },
+      { key: 'S', description: 'Slice cut' },
     ]},
     { category: 'Actions', items: [
       { key: 'R', description: 'Rotate selected' },

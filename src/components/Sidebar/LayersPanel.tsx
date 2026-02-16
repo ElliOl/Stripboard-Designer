@@ -17,6 +17,7 @@ import {
   Image as ImageIcon,
   Upload,
   Trash2,
+  Plus,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 
@@ -109,6 +110,10 @@ export const LayersPanel = () => {
     rows,
     cols,
     setBoardSize,
+    pcbs,
+    addPCB,
+    removePCB,
+    updatePCB,
     referenceImages,
     addReferenceImage,
     updateReferenceImageById,
@@ -121,6 +126,10 @@ export const LayersPanel = () => {
   const [showComponentAccordion, setShowComponentAccordion] = useState(false);
   const [tempRows, setTempRows] = useState(rows);
   const [tempCols, setTempCols] = useState(cols);
+  const [editingPcbId, setEditingPcbId] = useState<string | null>(null);
+  const [addPcbDialogOpen, setAddPcbDialogOpen] = useState(false);
+  const [deletePcbId, setDeletePcbId] = useState<string | null>(null);
+  const [newPcbName, setNewPcbName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sync temp values when actual values change
@@ -683,6 +692,108 @@ export const LayersPanel = () => {
                         Current: {rows} × {cols}
                       </div>
                     </div>
+                    
+                    {/* Additional PCBs Section */}
+                    <div className="mt-4">
+                      <div className="text-[10px] font-semibold text-[#63637a] uppercase tracking-wider mb-2">
+                        Additional PCBs ({pcbs.length - 1})
+                      </div>
+                      
+                      <div className="space-y-2">
+                        {/* Add new PCB button */}
+                        <button
+                          onClick={() => {
+                            setNewPcbName(`PCB ${pcbs.length}`);
+                            setAddPcbDialogOpen(true);
+                          }}
+                          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md
+                            bg-[#1c1c22] hover:bg-[#222228] border border-[#2c2c36] hover:border-[#3c3c4a]
+                            text-[10px] text-[#a6a6b8] transition-all"
+                        >
+                          <Plus size={12} />
+                          Add PCB
+                        </button>
+
+                        {/* List of additional PCBs */}
+                        {pcbs.filter(p => !p.isMain).map((pcb) => (
+                            <div key={pcb.id} className="border border-[#1c1c22] rounded-md p-2 space-y-2">
+                              {/* PCB header */}
+                              <div className="flex items-center justify-between">
+                                {editingPcbId === pcb.id ? (
+                                  <input
+                                    type="text"
+                                    defaultValue={pcb.name}
+                                    autoFocus
+                                    onBlur={(e) => {
+                                      if (e.target.value.trim()) {
+                                        updatePCB(pcb.id, { name: e.target.value.trim() });
+                                      }
+                                      setEditingPcbId(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        if ((e.target as HTMLInputElement).value.trim()) {
+                                          updatePCB(pcb.id, { name: (e.target as HTMLInputElement).value.trim() });
+                                        }
+                                        setEditingPcbId(null);
+                                      } else if (e.key === 'Escape') {
+                                        setEditingPcbId(null);
+                                      }
+                                    }}
+                                    className="flex-1 text-[10px] font-semibold text-[#a6a6b8] bg-[#0e0e12] border border-[#c8ff2e] rounded px-1 py-0.5 focus:outline-none"
+                                  />
+                                ) : (
+                                  <button
+                                    onClick={() => setEditingPcbId(pcb.id)}
+                                    className="flex-1 text-left text-[10px] font-semibold text-[#a6a6b8] hover:text-[#ededf0] transition-colors"
+                                  >
+                                    {pcb.name}
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => setDeletePcbId(pcb.id)}
+                                  className="p-0.5 rounded hover:bg-[#2a1515] text-[#ef4444]/70 hover:text-[#ef4444] transition-colors"
+                                  title="Delete PCB"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+
+                              {/* Size controls */}
+                              <div className="space-y-1.5">
+                                <div className="flex items-center gap-2">
+                                  <label className="text-[9px] text-[#63637a] w-10">Rows:</label>
+                                  <input
+                                    type="number"
+                                    min="5"
+                                    max="100"
+                                    value={pcb.rows}
+                                    onChange={(e) => {
+                                      const newRows = Math.max(5, Math.min(100, parseInt(e.target.value) || pcb.rows));
+                                      updatePCB(pcb.id, { rows: newRows });
+                                    }}
+                                    className="flex-1 px-1.5 py-0.5 text-[10px] bg-[#0e0e12] border border-[#2c2c36] rounded text-[#ededf0] focus:outline-none focus:border-[#c8ff2e] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <label className="text-[9px] text-[#63637a] w-10">Cols:</label>
+                                  <input
+                                    type="number"
+                                    min="5"
+                                    max="100"
+                                    value={pcb.cols}
+                                    onChange={(e) => {
+                                      const newCols = Math.max(5, Math.min(100, parseInt(e.target.value) || pcb.cols));
+                                      updatePCB(pcb.id, { cols: newCols });
+                                    }}
+                                    className="flex-1 px-1.5 py-0.5 text-[10px] bg-[#0e0e12] border border-[#2c2c36] rounded text-[#ededf0] focus:outline-none focus:border-[#c8ff2e] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -690,6 +801,100 @@ export const LayersPanel = () => {
           })}
         </div>
       </div>
+      
+      {/* Add PCB Dialog */}
+      {addPcbDialogOpen && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50">
+          <div className="bg-[#1a1a22] border border-[#2a2a34] rounded-xl shadow-2xl shadow-black/50 p-4 max-w-sm mx-4 min-w-[300px]">
+            <div className="text-xs font-semibold text-[#a6a6b8] mb-3">Add New PCB</div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] text-[#63637a] mb-1 block">Name</label>
+                <input
+                  type="text"
+                  value={newPcbName}
+                  onChange={(e) => setNewPcbName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newPcbName.trim()) {
+                      addPCB(newPcbName.trim(), 20, 30);
+                      setAddPcbDialogOpen(false);
+                      setNewPcbName('');
+                    } else if (e.key === 'Escape') {
+                      setAddPcbDialogOpen(false);
+                      setNewPcbName('');
+                    }
+                  }}
+                  autoFocus
+                  className="w-full px-2 py-1.5 text-xs bg-[#0e0e12] border border-[#2c2c36] rounded text-[#ededf0] focus:outline-none focus:border-[#c8ff2e]"
+                  placeholder="e.g., Power Supply, Audio Board"
+                />
+              </div>
+              <div className="text-[9px] text-[#52525b]">
+                Default size: 20 rows × 30 cols (adjustable after creation)
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => {
+                  setAddPcbDialogOpen(false);
+                  setNewPcbName('');
+                }}
+                className="px-3 py-1.5 text-xs text-[#a6a6b8] bg-[#19191d] hover:bg-[#222228] rounded-md border border-[#2a2a34] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (newPcbName.trim()) {
+                    addPCB(newPcbName.trim(), 20, 30);
+                    setAddPcbDialogOpen(false);
+                    setNewPcbName('');
+                  }
+                }}
+                disabled={!newPcbName.trim()}
+                className="px-3 py-1.5 text-xs text-[#0e0e12] bg-[#c8ff2e] hover:bg-[#d4ff55] rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add PCB
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Delete PCB Confirmation Dialog */}
+      {deletePcbId && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50">
+          <div className="bg-[#1a1a22] border border-[#2a2a34] rounded-xl shadow-2xl shadow-black/50 p-4 max-w-sm mx-4">
+            <div className="flex items-start gap-3 mb-4">
+              <Trash2 size={18} className="text-red-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="text-xs font-semibold text-[#ededf0] mb-1">Delete PCB?</div>
+                <p className="text-xs text-[#a6a6b8] leading-relaxed">
+                  Delete <span className="font-semibold">{pcbs.find(p => p.id === deletePcbId)?.name}</span>? 
+                  This will remove the PCB and all its strips. This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setDeletePcbId(null)}
+                className="px-3 py-1.5 text-xs text-[#a6a6b8] bg-[#19191d] hover:bg-[#222228] rounded-md border border-[#2a2a34] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  removePCB(deletePcbId);
+                  setDeletePcbId(null);
+                }}
+                className="px-3 py-1.5 text-xs text-white bg-red-500/80 hover:bg-red-500 rounded-md transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

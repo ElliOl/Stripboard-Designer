@@ -5,6 +5,7 @@ import type {
   Net,
   RatsNestConnection,
   GridPosition,
+  PCB,
 } from './types';
 import { buildSpatialIndex, posKey, type SpatialIndex } from './spatial-index';
 
@@ -25,12 +26,13 @@ export function calculateRatsNest(
   components: Component[],
   strips: Strip[],
   wires: Wire[],
-  nets: Net[]
+  nets: Net[],
+  pcbs: PCB[]
 ): RatsNestConnection[] {
   const connections: RatsNestConnection[] = [];
   
-  // Build spatial index once for all nets
-  const index = buildSpatialIndex(components, strips, wires);
+  // Build PCB-aware spatial index once for all nets
+  const index = buildSpatialIndex(components, strips, wires, pcbs);
 
   for (const net of nets) {
     // Collect all pin positions belonging to this net
@@ -195,8 +197,31 @@ function discoverConnectedGroups(
 }
 
 /**
+ * Find the strip at a given world position, checking all PCBs
+ * (PCB-aware version for ratsnest calculations)
+ */
+function findStripAtPosition(pos: GridPosition, index: SpatialIndex): Strip | null {
+  // Check each PCB to find which one contains this position
+  for (const [_pcbId, pcb] of index.pcbsById) {
+    const localRow = pos.row - pcb.position.row;
+    const localCol = pos.col - pcb.position.col;
+    
+    // Check if position is within this PCB's bounds
+    if (localRow >= 0 && localRow < pcb.rows && localCol >= 0 && localCol < pcb.cols) {
+      const key = `${pcb.isMain ? 'main' : pcb.id}:${localRow}`;
+      const strip = index.stripByPcbRow.get(key);
+      if (strip && localCol >= strip.startCol && localCol <= strip.endCol) {
+        return strip;
+      }
+    }
+  }
+  
+  return null;
+}
+
+/**
  * Get all positions connected to a given position via strips or wires.
- * Optimized for ratsnest calculation.
+ * Optimized for ratsnest calculation. PCB-aware: strips are isolated per PCB.
  *
  * Strip connectivity: walks outward from the pin position and STOPS when
  * it encounters a pin belonging to a different net.  A conflicting-net pin
@@ -218,25 +243,31 @@ function getConnectedPositionsForRatsnest(
   const connected: GridPosition[] = [];
   const key = posKey(pos);
 
-  // Check strips on the same row
-  const strip = index.stripByRow.get(pos.row);
-  if (strip && pos.col >= strip.startCol && pos.col <= strip.endCol) {
-    const segment = findSegmentContaining(strip, pos.col);
+  // Check strips at this position (PCB-aware)
+  const strip = findStripAtPosition(pos, index);
+  if (strip) {
+    const pcb = strip.pcbId ? index.pcbsById.get(strip.pcbId) : index.pcbsById.get('main-pcb');
+    const pcbOffset = pcb ? pcb.position : { row: 0, col: 0 };
+    const localCol = pos.col - pcbOffset.col;
+    
+    const segment = findSegmentContaining(strip, localCol);
     if (segment) {
       // Walk LEFT from current position — stop at any conflicting net
-      for (let col = pos.col - 1; col >= segment.startCol; col--) {
-        const colKey = posKey({ row: strip.row, col });
+      for (let col = localCol - 1; col >= segment.startCol; col--) {
+        const worldPos = { row: strip.row + pcbOffset.row, col: col + pcbOffset.col };
+        const colKey = posKey(worldPos);
         const pinsHere = index.pinsByPos.get(colKey) || [];
         if (pinsHere.some(pin => pin.netId && pin.netId !== netId)) break;
-        connected.push({ row: strip.row, col });
+        connected.push(worldPos);
       }
 
       // Walk RIGHT from current position — stop at any conflicting net
-      for (let col = pos.col + 1; col <= segment.endCol; col++) {
-        const colKey = posKey({ row: strip.row, col });
+      for (let col = localCol + 1; col <= segment.endCol; col++) {
+        const worldPos = { row: strip.row + pcbOffset.row, col: col + pcbOffset.col };
+        const colKey = posKey(worldPos);
         const pinsHere = index.pinsByPos.get(colKey) || [];
         if (pinsHere.some(pin => pin.netId && pin.netId !== netId)) break;
-        connected.push({ row: strip.row, col });
+        connected.push(worldPos);
       }
     }
   }
@@ -260,14 +291,19 @@ function getConnectedPositionsForRatsnest(
           break;
         }
         
-        // Check for connection through a strip
-        const stripAtPoint = index.stripByRow.get(wirePoint.row);
-        if (stripAtPoint && wirePoint.col >= stripAtPoint.startCol && wirePoint.col <= stripAtPoint.endCol) {
-          const segment = findSegmentContaining(stripAtPoint, wirePoint.col);
+        // Check for connection through a strip (PCB-aware)
+        const stripAtPoint = findStripAtPosition(wirePoint, index);
+        if (stripAtPoint) {
+          const pcb = stripAtPoint.pcbId ? index.pcbsById.get(stripAtPoint.pcbId) : index.pcbsById.get('main-pcb');
+          const pcbOffset = pcb ? pcb.position : { row: 0, col: 0 };
+          const localCol = wirePoint.col - pcbOffset.col;
+          
+          const segment = findSegmentContaining(stripAtPoint, localCol);
           if (segment) {
             // Check if any pin in this strip segment belongs to the current net
             for (let col = segment.startCol; col <= segment.endCol; col++) {
-              const colKey = posKey({ row: stripAtPoint.row, col });
+              const worldPos = { row: stripAtPoint.row + pcbOffset.row, col: col + pcbOffset.col };
+              const colKey = posKey(worldPos);
               const pinsOnStrip = index.pinsByPos.get(colKey) || [];
               if (pinsOnStrip.some(pin => pin.netId === netId)) {
                 wireConnectsToNet = true;
