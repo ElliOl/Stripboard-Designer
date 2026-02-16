@@ -167,6 +167,7 @@ export const StripboardCanvas = () => {
     y2: number;
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false); // Track dragging state for cache control
+  const selectionBoxCleanupRef = useRef<(() => void) | null>(null); // Cleanup for selection box document listeners
 
   // ─── Context Menu & Edit Dialog ───────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -420,7 +421,22 @@ export const StripboardCanvas = () => {
     setWirePreviewPoint(null);
     interactionRef.current = null;
     setSelectionBox(null);
+    
+    // Clean up selection box listeners if tool changes
+    if (selectionBoxCleanupRef.current) {
+      selectionBoxCleanupRef.current();
+      selectionBoxCleanupRef.current = null;
+    }
   }, [activeTool]);
+
+  // Clean up selection box listeners on unmount
+  useEffect(() => {
+    return () => {
+      if (selectionBoxCleanupRef.current) {
+        selectionBoxCleanupRef.current();
+      }
+    };
+  }, []);
 
   // ─── Keyboard Shortcuts (Copy / Paste) ─────────────────────
   useEffect(() => {
@@ -886,6 +902,58 @@ export const StripboardCanvas = () => {
           x2: content.x,
           y2: content.y,
         });
+
+        // Set up document-level listeners to handle mouse leaving the window
+        const handleDocumentMouseMove = (moveEvt: MouseEvent) => {
+          const stage = stageRef.current;
+          if (!stage) return;
+
+          // Get pointer position from the event on the document
+          // We need to calculate the position relative to the stage container
+          const container = stage.container();
+          const rect = container.getBoundingClientRect();
+          
+          // Calculate pointer position relative to stage
+          const stagePointerX = moveEvt.clientX - rect.left;
+          const stagePointerY = moveEvt.clientY - rect.top;
+          
+          const content = pointerToContent(stagePointerX, stagePointerY);
+          setSelectionBox((prev) =>
+            prev ? { ...prev, x2: content.x, y2: content.y } : null
+          );
+        };
+
+        const completeSelection = () => {
+          const interaction = interactionRef.current;
+          if (interaction?.type === 'selectionBox') {
+            // Get the current selection box using a callback to ensure we have the latest value
+            setSelectionBox((currentBox) => {
+              if (currentBox) {
+                const enclosedIds = getItemsInSelectionBox(currentBox);
+                if (interaction.shiftKey) {
+                  addToSelection(enclosedIds);
+                } else if (interaction.metaKey) {
+                  removeFromSelection(enclosedIds);
+                } else {
+                  setSelectedItems(enclosedIds);
+                }
+              }
+              return null; // Clear the selection box
+            });
+          }
+          interactionRef.current = null;
+          
+          // Clean up listeners
+          document.removeEventListener('mousemove', handleDocumentMouseMove);
+          document.removeEventListener('mouseup', completeSelection);
+          selectionBoxCleanupRef.current = null;
+        };
+
+        document.addEventListener('mousemove', handleDocumentMouseMove);
+        document.addEventListener('mouseup', completeSelection);
+        
+        // Store cleanup function
+        selectionBoxCleanupRef.current = completeSelection;
       } else {
         // ── Clicked on an item → start MULTI-DRAG ──
         const itemId = interaction.clickedItemId;
@@ -1038,6 +1106,13 @@ export const StripboardCanvas = () => {
     if (evt.button !== 0) return;
 
     const interaction = interactionRef.current;
+    
+    // Clean up selection box document listeners if they exist
+    if (selectionBoxCleanupRef.current) {
+      selectionBoxCleanupRef.current();
+      selectionBoxCleanupRef.current = null;
+    }
+    
     interactionRef.current = null;
 
     if (!interaction) return;
