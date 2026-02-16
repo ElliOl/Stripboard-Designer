@@ -20,13 +20,13 @@ import type {
   ReferenceImageState,
   PCB,
 } from '@/lib/types';
-import { getRotatedPinPositions } from '@/lib/rotation';
+import { getRotatedPinPositions, unrotatePositions } from '@/lib/rotation';
 import {
   type ParsedNetlist,
   mapFootprintToDefinition,
   isVirtualRef,
 } from '@/lib/netlist-parser';
-import { createGenericDefinition } from '@/lib/component-utils';
+import { createGenericDefinition, createDefinitionFromPlacements } from '@/lib/component-utils';
 
 /**
  * Determine the default rotation for a component.
@@ -97,6 +97,8 @@ interface StripboardStore extends StripboardState {
   removeComponent: (id: string) => void;
   updateComponent: (id: string, updates: Partial<Component>) => void;
   rotateComponent: (id: string) => void;
+  moveComponentPin: (componentId: string, pinIndex: number, newAbsPos: GridPosition) => void;
+  finalizePinDrag: (componentId: string) => void;
 
   // Strips (strips are permanent board infrastructure – one per row)
   addCut: (row: number, col: number, type: 'drill' | 'slice') => void;
@@ -337,26 +339,40 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
     );
     if (!def) return;
 
+    // Calculate the center of the component using actual absolute pin positions
+    const absMinRow = Math.min(...component.pins.map(p => p.position.row));
+    const absMaxRow = Math.max(...component.pins.map(p => p.position.row));
+    const absMinCol = Math.min(...component.pins.map(p => p.position.col));
+    const absMaxCol = Math.max(...component.pins.map(p => p.position.col));
+    const centerRow = (absMinRow + absMaxRow) / 2;
+    const centerCol = (absMinCol + absMaxCol) / 2;
+
     const newRotation = ((component.rotation + 90) % 360) as 0 | 90 | 180 | 270;
     const rotatedPins = getRotatedPinPositions(def.pins, newRotation);
+
+    // Calculate new relative center after rotation
+    const newRelMinRow = Math.min(...rotatedPins.map(p => p.row));
+    const newRelMaxRow = Math.max(...rotatedPins.map(p => p.row));
+    const newRelMinCol = Math.min(...rotatedPins.map(p => p.col));
+    const newRelMaxCol = Math.max(...rotatedPins.map(p => p.col));
+    const newRelCenterRow = (newRelMinRow + newRelMaxRow) / 2;
+    const newRelCenterCol = (newRelMinCol + newRelMaxCol) / 2;
+
+    // Position that keeps the absolute center at the same grid location
+    let newPosRow = Math.round(centerRow - newRelCenterRow);
+    let newPosCol = Math.round(centerCol - newRelCenterCol);
 
     // Clamp so all pins stay on the board
     const maxPinRow = Math.max(...rotatedPins.map((p) => p.row));
     const maxPinCol = Math.max(...rotatedPins.map((p) => p.col));
-    const clampedRow = Math.max(
-      0,
-      Math.min(state.rows - 1 - maxPinRow, component.position.row)
-    );
-    const clampedCol = Math.max(
-      0,
-      Math.min(state.cols - 1 - maxPinCol, component.position.col)
-    );
+    newPosRow = Math.max(0, Math.min(state.rows - 1 - maxPinRow, newPosRow));
+    newPosCol = Math.max(0, Math.min(state.cols - 1 - maxPinCol, newPosCol));
 
     const newPins: ComponentPin[] = component.pins.map((pin, i) => ({
       ...pin,
       position: {
-        row: clampedRow + rotatedPins[i].row,
-        col: clampedCol + rotatedPins[i].col,
+        row: newPosRow + rotatedPins[i].row,
+        col: newPosCol + rotatedPins[i].col,
       },
     }));
 
@@ -367,7 +383,115 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
           ? {
               ...c,
               rotation: newRotation,
-              position: { row: clampedRow, col: clampedCol },
+              position: { row: newPosRow, col: newPosCol },
+              pins: newPins,
+            }
+          : c
+      ),
+    }));
+  },
+
+  moveComponentPin: (componentId, pinIndex, newAbsPos) =>
+    set((state) => ({
+      components: state.components.map((c) => {
+        if (c.id !== componentId) return c;
+        const newPins = c.pins.map((pin, i) =>
+          i === pinIndex
+            ? { ...pin, position: { row: newAbsPos.row, col: newAbsPos.col } }
+            : pin
+        );
+        return { ...c, pins: newPins };
+      }),
+    })),
+
+  finalizePinDrag: (componentId) => {
+    const state = get();
+    const component = state.components.find((c) => c.id === componentId);
+    if (!component) return;
+    const def = state.componentDefinitions.find(
+      (d) => d.id === component.definitionId
+    );
+    if (!def) return;
+
+    // Compute current relative pin positions from actual absolute positions
+    const relPins = component.pins.map((p) => ({
+      row: p.position.row - component.position.row,
+      col: p.position.col - component.position.col,
+    }));
+
+    // Normalize so min row/col is 0
+    const minRelRow = Math.min(...relPins.map((p) => p.row));
+    const minRelCol = Math.min(...relPins.map((p) => p.col));
+    const normalizedPins = relPins.map((p) => ({
+      row: p.row - minRelRow,
+      col: p.col - minRelCol,
+    }));
+
+    // Check if positions actually differ from the definition
+    const oldRotated = getRotatedPinPositions(def.pins, component.rotation);
+    const oldMinRow = Math.min(...oldRotated.map((p) => p.row));
+    const oldMinCol = Math.min(...oldRotated.map((p) => p.col));
+    const oldNormalized = oldRotated.map((p) => ({
+      row: p.row - oldMinRow,
+      col: p.col - oldMinCol,
+    }));
+    const positionsMatch = normalizedPins.every((p, i) =>
+      p.row === oldNormalized[i].row && p.col === oldNormalized[i].col
+    );
+
+    if (positionsMatch) return; // Nothing changed
+
+    // Unrotate the normalized positions to get definition-space positions
+    const unrotated = unrotatePositions(normalizedPins, component.rotation);
+
+    // Build new definition variant preserving the base type for subtype detection
+    const placements = unrotated.map((pos: GridPosition, i: number) => ({
+      row: pos.row,
+      col: pos.col,
+      number: component.pins[i].number,
+      name: def.pins[i]?.name ?? '',
+    }));
+
+    const newDef = createDefinitionFromPlacements(def.footprint.type, placements);
+
+    // Preserve base type in ID for subtype detection
+    const baseType = def.id.split('-')[0];
+    const enhancedDef = {
+      ...newDef,
+      id: `${baseType}-custom-${newDef.id}`,
+      name: def.name,
+      category: def.category,
+    };
+
+    // Adjust component position by the origin shift
+    const newComponentPos = {
+      row: component.position.row + minRelRow,
+      col: component.position.col + minRelCol,
+    };
+
+    // Add definition if not already present
+    const hasDef = state.componentDefinitions.some((d) => d.id === enhancedDef.id);
+
+    // Rebuild absolute pin positions from the new definition
+    const newRotated = getRotatedPinPositions(enhancedDef.pins, component.rotation);
+    const newPins: ComponentPin[] = component.pins.map((pin, i) => ({
+      ...pin,
+      position: {
+        row: newComponentPos.row + newRotated[i].row,
+        col: newComponentPos.col + newRotated[i].col,
+      },
+    }));
+
+    set((s) => ({
+      componentDefinitions: hasDef
+        ? s.componentDefinitions
+        : [...s.componentDefinitions, enhancedDef],
+      components: s.components.map((c) =>
+        c.id === componentId
+          ? {
+              ...c,
+              definitionId: enhancedDef.id,
+              position: newComponentPos,
               pins: newPins,
             }
           : c

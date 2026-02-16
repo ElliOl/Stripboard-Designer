@@ -67,6 +67,13 @@ type InteractionState =
       lastContentY: number;
     }
   | {
+      type: 'pinDragging';
+      componentId: string;
+      pinIndex: number;
+      lastGridRow: number;
+      lastGridCol: number;
+    }
+  | {
       type: 'panning';
       startScreenX: number;
       startScreenY: number;
@@ -81,6 +88,38 @@ type InteractionState =
       lastGridCol: number;
       visitedPositions: Set<string>; // track "row:col" strings to avoid double-toggling
     };
+
+/**
+ * Check if a component supports per-pin dragging.
+ * Allowed for: 2-pin non-header components (resistors, diodes, caps)
+ *              and TO-92 transistors.
+ */
+function isPinDraggable(def: ComponentDefinition): boolean {
+  const fpType = def.footprint.type;
+  // TO-92 transistors
+  if (fpType === 'TO92') return true;
+  // 2-pin axial / radial components (not headers or SIP connectors)
+  if (def.pins.length === 2 && (fpType === 'Axial' || fpType === 'Radial')) {
+    if (def.id.includes('header')) return false;
+    return true;
+  }
+  // Multi-pin radial LEDs (bicolor 3-pin, RGB 4-pin)
+  if (fpType === 'Radial' && def.id.includes('led')) return true;
+  return false;
+}
+
+/** Per-type Euclidean distance limits for pin dragging (in grid units). */
+function getPinDragLimits(def: ComponentDefinition): { minDist: number; maxDist: number } {
+  if (def.footprint.type === 'TO92') return { minDist: 1, maxDist: 4 };
+  const baseId = def.id.replace(/-custom-.*$/, '');
+  if (baseId.includes('resistor')) return { minDist: 1, maxDist: 8 };
+  if (baseId.includes('diode') || baseId.includes('zener')) return { minDist: 1, maxDist: 8 };
+  if (baseId === 'capacitor-rect') return { minDist: 2, maxDist: 8 };
+  if (baseId.includes('electrolytic') || baseId === 'capacitor' || baseId === 'capacitor-wide') return { minDist: 1, maxDist: 8 };
+  if (baseId.includes('led-rgb') || baseId.includes('led-bicolor')) return { minDist: 1, maxDist: 4 };
+  if (baseId.includes('led')) return { minDist: 1, maxDist: 8 };
+  return { minDist: 1, maxDist: 8 };
+}
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -144,6 +183,8 @@ export const StripboardCanvas = () => {
   const updateReferenceImageById = useStripboardStore((s) => s.updateReferenceImageById);
   const copySelected = useStripboardStore((s) => s.copySelected);
   const paste = useStripboardStore((s) => s.paste);
+  const moveComponentPin = useStripboardStore((s) => s.moveComponentPin);
+  const finalizePinDrag = useStripboardStore((s) => s.finalizePinDrag);
 
   const stageRef = useRef<any>(null);
   const cachedComponentLayerRef = useRef<any>(null); // Cached background components
@@ -965,10 +1006,50 @@ export const StripboardCanvas = () => {
         // Store cleanup function
         selectionBoxCleanupRef.current = completeSelection;
       } else {
-        // ── Clicked on an item → start MULTI-DRAG ──
+        // ── Clicked on an item → check for PIN DRAG or MULTI-DRAG ──
         const itemId = interaction.clickedItemId;
         const currentSelected =
           useStripboardStore.getState().selectedItems;
+
+        // Check if this is a pin drag on a draggable component
+        const clickedComp = components.find((c) => c.id === itemId);
+        const clickedDef = clickedComp ? definitionMap.get(clickedComp.definitionId) : null;
+
+        if (clickedComp && clickedDef && isPinDraggable(clickedDef)) {
+          // Only start pin drag if the click is close to an actual pin
+          // (not just rounded to the same grid cell — prevents body clicks
+          // on multi-pin components like TO-92 from hijacking drag)
+          const clickPxX = interaction.startContentX;
+          const clickPxY = interaction.startContentY;
+          const PIN_HIT_RADIUS = GRID_PITCH * 0.3;
+          let closestPinIdx = -1;
+          let closestPinDist = Infinity;
+          clickedComp.pins.forEach((p, i) => {
+            const px = p.position.col * GRID_PITCH;
+            const py = p.position.row * GRID_PITCH;
+            const d = Math.sqrt((clickPxX - px) ** 2 + (clickPxY - py) ** 2);
+            if (d < closestPinDist) {
+              closestPinDist = d;
+              closestPinIdx = i;
+            }
+          });
+          if (closestPinIdx !== -1 && closestPinDist <= PIN_HIT_RADIUS) {
+            // Start PIN DRAG
+            if (!currentSelected.includes(itemId)) {
+              setSelectedItems([itemId]);
+            }
+            saveToHistory();
+            interactionRef.current = {
+              type: 'pinDragging',
+              componentId: clickedComp.id,
+              pinIndex: closestPinIdx,
+              lastGridRow: clickedComp.pins[closestPinIdx].position.row,
+              lastGridCol: clickedComp.pins[closestPinIdx].position.col,
+            };
+            setIsDragging(true);
+            return;
+          }
+        }
 
         if (!currentSelected.includes(itemId)) {
           // Item was not selected — select it (shift adds, otherwise replace)
@@ -1054,6 +1135,49 @@ export const StripboardCanvas = () => {
           // Force immediate redraw of active layer during drag
           if (activeComponentLayerRef.current) {
             activeComponentLayerRef.current.batchDraw();
+          }
+        }
+      }
+      return;
+    }
+
+    // ── Active PIN DRAGGING → move single pin ────────────────
+    if (interaction.type === 'pinDragging') {
+      const content = pointerToContent(pointer.x, pointer.y);
+      const newGridRow = Math.round(content.y / GRID_PITCH);
+      const newGridCol = Math.round(content.x / GRID_PITCH);
+
+      if (newGridRow !== interaction.lastGridRow || newGridCol !== interaction.lastGridCol) {
+        const comp = components.find((c) => c.id === interaction.componentId);
+        if (comp) {
+          const def = definitionMap.get(comp.definitionId);
+          if (def) {
+            // Constraint: max distance from any other pin
+            const limits = getPinDragLimits(def);
+            const otherPins = comp.pins.filter((_, i) => i !== interaction.pinIndex);
+            const tooFar = otherPins.some((p) => {
+              const dr = newGridRow - p.position.row;
+              const dc = newGridCol - p.position.col;
+              return Math.sqrt(dr * dr + dc * dc) > limits.maxDist + 0.01;
+            });
+            const tooClose = otherPins.some((p) => {
+              const dr = newGridRow - p.position.row;
+              const dc = newGridCol - p.position.col;
+              const d = Math.sqrt(dr * dr + dc * dc);
+              return d < limits.minDist - 0.01 || (p.position.row === newGridRow && p.position.col === newGridCol);
+            });
+            if (!tooFar && !tooClose) {
+              moveComponentPin(interaction.componentId, interaction.pinIndex, {
+                row: newGridRow,
+                col: newGridCol,
+              });
+              interaction.lastGridRow = newGridRow;
+              interaction.lastGridCol = newGridCol;
+
+              if (activeComponentLayerRef.current) {
+                activeComponentLayerRef.current.batchDraw();
+              }
+            }
           }
         }
       }
@@ -1168,6 +1292,13 @@ export const StripboardCanvas = () => {
     if (interaction.type === 'dragging') {
       // History was saved at drag start; drag is done.
       setIsDragging(false); // Re-enable caching
+      return;
+    }
+
+    // ── Pin drag complete → finalize definition ─────────
+    if (interaction.type === 'pinDragging') {
+      finalizePinDrag(interaction.componentId);
+      setIsDragging(false);
       return;
     }
 

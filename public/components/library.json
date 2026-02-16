@@ -492,6 +492,38 @@
       "description": "Large zener diode (4 hole spacing)"
     }
   },
+  {
+    "id": "diode-upright",
+    "name": "Diode (Upright)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "Axial",
+      "dimensions": { "rows": 1, "cols": 2, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "A", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "K", "position": { "row": 0, "col": 1 } }
+    ],
+    "metadata": {
+      "description": "Upright diode (both pins adjacent, 1 hole spacing)"
+    }
+  },
+  {
+    "id": "zener-diode-upright",
+    "name": "Zener Diode (Upright)",
+    "category": "Discrete",
+    "footprint": {
+      "type": "Axial",
+      "dimensions": { "rows": 1, "cols": 2, "pitch": 2.54 }
+    },
+    "pins": [
+      { "number": "1", "name": "A", "position": { "row": 0, "col": 0 } },
+      { "number": "2", "name": "K", "position": { "row": 0, "col": 1 } }
+    ],
+    "metadata": {
+      "description": "Upright zener diode (both pins adjacent, 1 hole spacing)"
+    }
+  },
 
   {
     "id": "transistor-npn",

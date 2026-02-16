@@ -293,7 +293,9 @@ const ComponentImpl = ({
 
   // ─── Diode detection ──────────────────────────────────────
   const isDiode = subtype === 'diode';
-  const isZener = definition.id === 'zener-diode' || definition.id === 'zener-diode-large';
+  const isZener = definition.id.includes('zener');
+  // Adjacent pins auto-convert to upright diode (like upright resistor)
+  const isDiodeUpright = isDiode && pinDist <= 1.01;
 
   // Center coordinates
   const cX = ((rMinCol + rMaxCol) / 2) * GP;
@@ -598,8 +600,33 @@ const ComponentImpl = ({
         </>
       )}
 
+      {/* ─── Diode Upright ─────────────────────────────────────── */}
+      {isAxial && isDiodeUpright && (
+        <>
+          {/* Small cylindrical body between adjacent pins */}
+          <Circle
+            x={cX}
+            y={cY}
+            radius={GP * 0.3}
+            fill={customColor || (isZener ? '#5a5a6a' : '#8a8a9a')}
+            stroke={isSelected ? '#c8ff2e' : customStroke || '#6a6a7a'}
+            strokeWidth={isSelected ? 2 : 1}
+          />
+          {/* Cathode ring (dark band) */}
+          <Circle
+            x={cX}
+            y={cY}
+            radius={GP * 0.22}
+            fill="transparent"
+            stroke={isZener ? '#808080' : '#333333'}
+            strokeWidth={2}
+            listening={false}
+          />
+        </>
+      )}
+
       {/* ─── Diode Body (Axial) — unified for H/V/diagonal ──── */}
-      {isAxial && isDiode && (() => {
+      {isAxial && isDiode && !isDiodeUpright && (() => {
         const p1x = rotatedPins[0].col * GP;
         const p1y = rotatedPins[0].row * GP;
         const p2x = rotatedPins[1].col * GP;
@@ -639,7 +666,7 @@ const ComponentImpl = ({
         const dist = Math.sqrt(dxP * dxP + dyP * dyP);
         const angle = Math.atan2(dyP, dxP) * 180 / Math.PI;
         const halfDist = dist / 2;
-        const bodyLen = Math.min(GP * 0.9, dist - GP * 0.2);
+        const bodyLen = Math.min(GP * 1.2, dist - GP * 0.2);
         const halfBody = bodyLen / 2;
         return (
           <Group x={(p1x + p2x) / 2} y={(p1y + p2y) / 2} rotation={angle}>
@@ -659,140 +686,224 @@ const ComponentImpl = ({
       })()}
 
       {/* ─── Radial Electrolytic Capacitor ─────────────────────── */}
-      {isRadial && subtype === 'electrolytic' && (
-        <>
-          <Circle
-            x={cX}
-            y={cY}
-            radius={radialRadius}
-            fill={customColor || '#1e40af'}
-            stroke={isSelected ? '#c8ff2e' : customStroke || '#1e3a8a'}
-            strokeWidth={isSelected ? 2 : 1.5}
-            shadowColor={showShadows ? "#000" : undefined}
-            shadowBlur={showShadows ? 4 : 0}
-            shadowOpacity={showShadows ? 0.3 : 0}
-          />
-          {/* Stripe on negative side */}
-          <Arc
-            x={cX}
-            y={cY}
-            innerRadius={radialRadius - 3}
-            outerRadius={radialRadius}
-            angle={120}
-            rotation={isHoriz ? 120 : 30}
-            fill="#4a6aaa"
-            listening={false}
-          />
-        </>
-      )}
+      {isRadial && subtype === 'electrolytic' && (() => {
+        // Lead wires from each pin to body edge when pins are outside the body
+        const wires: React.ReactNode[] = [];
+        rotatedPins.forEach((rp, i) => {
+          const px = rp.col * GP;
+          const py = rp.row * GP;
+          const dx = px - cX;
+          const dy = py - cY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > radialRadius + 1) {
+            const edgeX = cX + (dx / dist) * radialRadius;
+            const edgeY = cY + (dy / dist) * radialRadius;
+            wires.push(
+              <Line key={`wire-${i}`} points={[px, py, edgeX, edgeY]} stroke="#888" strokeWidth={1.5} listening={false} />
+            );
+          }
+        });
+        return (
+          <>
+            {wires}
+            <Circle
+              x={cX}
+              y={cY}
+              radius={radialRadius}
+              fill={customColor || '#1e40af'}
+              stroke={isSelected ? '#c8ff2e' : customStroke || '#1e3a8a'}
+              strokeWidth={isSelected ? 2 : 1.5}
+              shadowColor={showShadows ? "#000" : undefined}
+              shadowBlur={showShadows ? 4 : 0}
+              shadowOpacity={showShadows ? 0.3 : 0}
+            />
+            {/* Stripe on negative side */}
+            <Arc
+              x={cX}
+              y={cY}
+              innerRadius={radialRadius - 3}
+              outerRadius={radialRadius}
+              angle={120}
+              rotation={isHoriz ? 120 : 30}
+              fill="#4a6aaa"
+              listening={false}
+            />
+            {/* Value label inside body */}
+            {showLabels && component.value && (
+              <Text
+                x={cX - radialRadius}
+                y={cY - 4}
+                width={radialRadius * 2}
+                text={component.value}
+                fontSize={7}
+                fontFamily="monospace"
+                fill="#c0d0ff"
+                align="center"
+                listening={false}
+              />
+            )}
+          </>
+        );
+      })()}
 
       {/* ─── LED (standard 2-pin) ──────────────────────────────── */}
-      {isRadial && subtype === 'led' && ledColor && (
-        <>
-          <Circle
-            x={cX}
-            y={cY}
-            radius={GP * 0.42}
-            fill={ledColor.fill}
-            stroke={isSelected ? '#c8ff2e' : darkenHex(ledColor.fill, 0.4)}
-            strokeWidth={isSelected ? 2 : 1.5}
-            shadowColor={showShadows ? ledColor.glow : undefined}
-            shadowBlur={showShadows ? 6 : 0}
-            shadowOpacity={showShadows ? 0.5 : 0}
-          />
-          <Circle
-            x={cX}
-            y={cY}
-            radius={GP * 0.25}
-            fill={ledColor.glow}
-            opacity={0.4}
-            listening={false}
-          />
-        </>
-      )}
+      {isRadial && subtype === 'led' && ledColor && (() => {
+        const ledR = GP * 0.42;
+        const wires: React.ReactNode[] = [];
+        rotatedPins.forEach((rp, i) => {
+          const px = rp.col * GP;
+          const py = rp.row * GP;
+          const dx = px - cX;
+          const dy = py - cY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > ledR + 1) {
+            wires.push(
+              <Line key={`wire-${i}`} points={[px, py, cX + (dx / dist) * ledR, cY + (dy / dist) * ledR]} stroke="#888" strokeWidth={1.5} listening={false} />
+            );
+          }
+        });
+        return (
+          <>
+            {wires}
+            <Circle
+              x={cX}
+              y={cY}
+              radius={ledR}
+              fill={ledColor.fill}
+              stroke={isSelected ? '#c8ff2e' : darkenHex(ledColor.fill, 0.4)}
+              strokeWidth={isSelected ? 2 : 1.5}
+              shadowColor={showShadows ? ledColor.glow : undefined}
+              shadowBlur={showShadows ? 6 : 0}
+              shadowOpacity={showShadows ? 0.5 : 0}
+            />
+            <Circle
+              x={cX}
+              y={cY}
+              radius={GP * 0.25}
+              fill={ledColor.glow}
+              opacity={0.4}
+              listening={false}
+            />
+          </>
+        );
+      })()}
 
       {/* ─── LED Bi-Color (3-pin) ──────────────────────────────── */}
-      {isRadial && subtype === 'led-bicolor' && (
-        <>
-          <Circle
-            x={cX}
-            y={cY}
-            radius={GP * 0.48}
-            fill="#333"
-            stroke={isSelected ? '#c8ff2e' : '#555'}
-            strokeWidth={isSelected ? 2 : 1.5}
-          />
-          {/* Two halves */}
-          <Arc
-            x={cX}
-            y={cY}
-            innerRadius={0}
-            outerRadius={GP * 0.35}
-            angle={180}
-            rotation={isHoriz ? 0 : 270}
-            fill="#dc2626"
-            listening={false}
-          />
-          <Arc
-            x={cX}
-            y={cY}
-            innerRadius={0}
-            outerRadius={GP * 0.35}
-            angle={180}
-            rotation={isHoriz ? 180 : 90}
-            fill="#16a34a"
-            listening={false}
-          />
-        </>
-      )}
+      {isRadial && subtype === 'led-bicolor' && (() => {
+        const biR = GP * 0.48;
+        const wires: React.ReactNode[] = [];
+        rotatedPins.forEach((rp, i) => {
+          const px = rp.col * GP;
+          const py = rp.row * GP;
+          const dx = px - cX;
+          const dy = py - cY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > biR + 1) {
+            wires.push(
+              <Line key={`wire-${i}`} points={[px, py, cX + (dx / dist) * biR, cY + (dy / dist) * biR]} stroke="#888" strokeWidth={1.5} listening={false} />
+            );
+          }
+        });
+        return (
+          <>
+            {wires}
+            <Circle
+              x={cX}
+              y={cY}
+              radius={biR}
+              fill="#333"
+              stroke={isSelected ? '#c8ff2e' : '#555'}
+              strokeWidth={isSelected ? 2 : 1.5}
+            />
+            {/* Two halves */}
+            <Arc
+              x={cX}
+              y={cY}
+              innerRadius={0}
+              outerRadius={GP * 0.35}
+              angle={180}
+              rotation={isHoriz ? 0 : 270}
+              fill="#dc2626"
+              listening={false}
+            />
+            <Arc
+              x={cX}
+              y={cY}
+              innerRadius={0}
+              outerRadius={GP * 0.35}
+              angle={180}
+              rotation={isHoriz ? 180 : 90}
+              fill="#16a34a"
+              listening={false}
+            />
+          </>
+        );
+      })()}
 
       {/* ─── LED RGB (4-pin) ───────────────────────────────────── */}
-      {isRadial && subtype === 'led-rgb' && (
-        <>
-          <Circle
-            x={cX}
-            y={cY}
-            radius={GP * 0.55}
-            fill="#222"
-            stroke={isSelected ? '#c8ff2e' : '#555'}
-            strokeWidth={isSelected ? 2 : 1.5}
-          />
-          {/* RGB segments */}
-          <Arc
-            x={cX}
-            y={cY}
-            innerRadius={0}
-            outerRadius={GP * 0.38}
-            angle={120}
-            rotation={0}
-            fill="#dc2626"
-            opacity={0.7}
-            listening={false}
-          />
-          <Arc
-            x={cX}
-            y={cY}
-            innerRadius={0}
-            outerRadius={GP * 0.38}
-            angle={120}
-            rotation={120}
-            fill="#16a34a"
-            opacity={0.7}
-            listening={false}
-          />
-          <Arc
-            x={cX}
-            y={cY}
-            innerRadius={0}
-            outerRadius={GP * 0.38}
-            angle={120}
-            rotation={240}
-            fill="#2563eb"
-            opacity={0.7}
-            listening={false}
-          />
-        </>
-      )}
+      {isRadial && subtype === 'led-rgb' && (() => {
+        const rgbR = GP * 0.55;
+        const wires: React.ReactNode[] = [];
+        rotatedPins.forEach((rp, i) => {
+          const px = rp.col * GP;
+          const py = rp.row * GP;
+          const dx = px - cX;
+          const dy = py - cY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > rgbR + 1) {
+            wires.push(
+              <Line key={`wire-${i}`} points={[px, py, cX + (dx / dist) * rgbR, cY + (dy / dist) * rgbR]} stroke="#888" strokeWidth={1.5} listening={false} />
+            );
+          }
+        });
+        return (
+          <>
+            {wires}
+            <Circle
+              x={cX}
+              y={cY}
+              radius={rgbR}
+              fill="#222"
+              stroke={isSelected ? '#c8ff2e' : '#555'}
+              strokeWidth={isSelected ? 2 : 1.5}
+            />
+            {/* RGB segments */}
+            <Arc
+              x={cX}
+              y={cY}
+              innerRadius={0}
+              outerRadius={GP * 0.38}
+              angle={120}
+              rotation={0}
+              fill="#dc2626"
+              opacity={0.7}
+              listening={false}
+            />
+            <Arc
+              x={cX}
+              y={cY}
+              innerRadius={0}
+              outerRadius={GP * 0.38}
+              angle={120}
+              rotation={120}
+              fill="#16a34a"
+              opacity={0.7}
+              listening={false}
+            />
+            <Arc
+              x={cX}
+              y={cY}
+              innerRadius={0}
+              outerRadius={GP * 0.38}
+              angle={120}
+              rotation={240}
+              fill="#2563eb"
+              opacity={0.7}
+              listening={false}
+            />
+          </>
+        );
+      })()}
 
       {/* ─── Inductor (Radial) ─────────────────────────────────── */}
       {isRadial && subtype === 'inductor' && (
@@ -850,8 +961,35 @@ const ComponentImpl = ({
         const to92Y = cY - to92H / 2;
         const flatR = 0;
         const roundR = isHoriz ? to92W * 0.45 : to92H * 0.45;
+        // Lead wires from pins to body edge when pins are outside the body
+        const wires: React.ReactNode[] = [];
+        const halfW = to92W / 2;
+        const halfH = to92H / 2;
+        rotatedPins.forEach((rp, i) => {
+          const px = rp.col * GP;
+          const py = rp.row * GP;
+          const dx = px - cX;
+          const dy = py - cY;
+          // Check if pin is outside the body rect
+          if (Math.abs(dx) > halfW + 1 || Math.abs(dy) > halfH + 1) {
+            // Intersect ray from center to pin with body rect edge
+            let edgeX = cX + dx;
+            let edgeY = cY + dy;
+            if (dx !== 0 || dy !== 0) {
+              const scaleX = dx !== 0 ? halfW / Math.abs(dx) : Infinity;
+              const scaleY = dy !== 0 ? halfH / Math.abs(dy) : Infinity;
+              const scale = Math.min(scaleX, scaleY);
+              edgeX = cX + dx * scale;
+              edgeY = cY + dy * scale;
+            }
+            wires.push(
+              <Line key={`wire-${i}`} points={[px, py, edgeX, edgeY]} stroke="#888" strokeWidth={1.5} listening={false} />
+            );
+          }
+        });
         return (
           <>
+            {wires}
             {isHoriz ? (
               <>
                 <Rect
@@ -1223,10 +1361,9 @@ const ComponentImpl = ({
       )}
 
       {/* ─── Axial (Resistor / Diode / Capacitor) text ──────────────────── */}
-      {isAxial && !isResistorUpright && showRefs && showLabels && (() => {
+      {isAxial && !isResistorUpright && !isDiodeUpright && showRefs && showLabels && (() => {
         // Position reference beside component for small components
         const isSmallComponent = subtype === 'resistor' || subtype === 'diode' || subtype === 'capacitor-rect';
-        const offsetX = isSmallComponent ? (bodyW / 2 + 8) : 0;
         const offsetY = isSmallComponent ? -5 : -(showValues && component.value ? 17 : 13);
         
         return (
@@ -1244,7 +1381,7 @@ const ComponentImpl = ({
           />
         );
       })()}
-      {isAxial && !isResistorUpright && showValues && showLabels && component.value && subtype !== 'capacitor-rect' && (() => {
+      {isAxial && !isResistorUpright && !isDiodeUpright && showValues && showLabels && component.value && subtype !== 'capacitor-rect' && (() => {
         // Position value beside component for small components
         const isSmallComponent = subtype === 'resistor' || subtype === 'diode';
         const offsetY = isSmallComponent ? (showRefs ? 3 : -5) : 10;
@@ -1266,6 +1403,20 @@ const ComponentImpl = ({
 
       {/* ─── Resistor upright text ───────────────────────────── */}
       {isResistorUpright && showRefs && showLabels && (
+        <Text
+          x={cX + GP * 0.35}
+          y={cY - 5}
+          text={component.reference}
+          fontSize={8}
+          fontFamily="monospace"
+          fill="#ccc"
+          fontStyle="bold"
+          listening={false}
+        />
+      )}
+
+      {/* ─── Diode upright text ────────────────────────────── */}
+      {isDiodeUpright && showRefs && showLabels && (
         <Text
           x={cX + GP * 0.35}
           y={cY - 5}
