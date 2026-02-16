@@ -94,8 +94,6 @@ const LAYERS: LayerInfo[] = [
   },
 ];
 
-const GRID_PITCH = 25.4;
-
 export const LayersPanel = () => {
   const { 
     layerVisibility, 

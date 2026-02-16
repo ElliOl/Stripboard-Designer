@@ -36,7 +36,7 @@ export async function renderPdfToDataUrl(
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Could not create canvas context');
 
-  await page.render({ canvasContext: ctx, viewport }).promise;
+  await page.render({ canvas, canvasContext: ctx, viewport }).promise;
 
   const dataUrl = canvas.toDataURL('image/png');
   return { dataUrl, width: viewport.width, height: viewport.height };

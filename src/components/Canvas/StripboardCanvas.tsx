@@ -1206,7 +1206,6 @@ export const StripboardCanvas = () => {
                 inverted={img.inverted}
                 opacity={img.opacity}
                 isSelected={selectedItems.includes(img.id)}
-                zoom={zoom}
                 onTransformEnd={(nx, ny, scaleMul) => {
                   updateReferenceImageById(img.id, {
                     x: nx,
@@ -1229,7 +1228,6 @@ export const StripboardCanvas = () => {
               inverted={referenceImage.inverted}
               opacity={referenceImage.opacity || 1.0}
               isSelected={selectedItems.includes(REF_IMAGE_ID)}
-              zoom={zoom}
               onTransformEnd={(nx, ny, scaleMul) => {
                 updateReferenceImage({
                   x: nx,
@@ -1311,7 +1309,6 @@ export const StripboardCanvas = () => {
                 inverted={img.inverted}
                 opacity={img.opacity}
                 isSelected={selectedItems.includes(img.id)}
-                zoom={zoom}
                 onTransformEnd={(nx, ny, scaleMul) => {
                   updateReferenceImageById(img.id, {
                     x: nx,
@@ -1334,7 +1331,6 @@ export const StripboardCanvas = () => {
               inverted={referenceImage.inverted}
               opacity={referenceImage.opacity || 1.0}
               isSelected={selectedItems.includes(REF_IMAGE_ID)}
-              zoom={zoom}
               onTransformEnd={(nx, ny, scaleMul) => {
                 updateReferenceImage({
                   x: nx,

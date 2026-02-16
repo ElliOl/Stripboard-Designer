@@ -17,7 +17,6 @@ type ReferenceImageProps = {
   inverted: boolean;
   opacity: number;
   isSelected: boolean;
-  zoom: number;
   onTransformEnd: (x: number, y: number, scale: number) => void;
 };
 
@@ -31,7 +30,6 @@ export const ReferenceImage = ({
   inverted,
   opacity,
   isSelected,
-  zoom,
   onTransformEnd,
 }: ReferenceImageProps) => {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -85,7 +83,6 @@ export const ReferenceImage = ({
     // We need to convert that back into our own scale factor and reset
     // the node's scale to 1.
     const scaleX = group.scaleX();
-    const newWidth = width * scaleX;
     // Derive the new reference-image scale from the new width
     // newWidth = naturalWidth * refScale  →  refScale = newWidth / naturalWidth
     // But we receive `width = naturalWidth * currentRefScale`, so
