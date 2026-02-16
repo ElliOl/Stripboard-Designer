@@ -143,6 +143,8 @@ export const StripboardCanvas = () => {
   const paste = useStripboardStore((s) => s.paste);
 
   const stageRef = useRef<any>(null);
+  const cachedComponentLayerRef = useRef<any>(null); // Cached background components
+  const activeComponentLayerRef = useRef<any>(null); // Active/selected components (uncached)
   const containerRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 });
 
@@ -161,6 +163,7 @@ export const StripboardCanvas = () => {
     x2: number;
     y2: number;
   } | null>(null);
+  const [isDragging, setIsDragging] = useState(false); // Track dragging state for cache control
 
   // ─── Context Menu & Edit Dialog ───────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -264,8 +267,11 @@ export const StripboardCanvas = () => {
   // Highlighted net color for components
   const hlNetColor = useMemo(() => {
     if (!highlightedNetId) return undefined;
-    return nets.find(n => n.id === highlightedNetId)?.color;
-  }, [highlightedNetId, nets]);
+    return netColorMap.get(highlightedNetId);
+  }, [highlightedNetId, netColorMap]);
+  
+  // Memoize component filter logic
+  const componentFilterActive = componentSearchFilter.trim().length > 0;
 
   // ─── Viewport Culling ──────────────────────────────────────
   const viewportBounds = useMemo(() => {
@@ -288,6 +294,122 @@ export const StripboardCanvas = () => {
   const visibleWires = useMemo(() => {
     return wires.filter((w) => isWireVisible(w.points, viewportBounds));
   }, [wires, viewportBounds]);
+
+  // CRITICAL PERFORMANCE OPTIMIZATION:
+  // Filter out components that would be dimmed due to net isolation
+  // This completely removes them from the render tree instead of rendering with low opacity
+  const renderableComponents = useMemo(() => {
+    if (!highlightedNetId) return visibleComponents;
+    
+    return visibleComponents.filter(c => {
+      // Check if any pin on this component connects to the highlighted net
+      return c.pins.some(p => p.netId === highlightedNetId);
+    });
+  }, [visibleComponents, highlightedNetId]);
+
+  // CRITICAL PERFORMANCE FLAG:
+  // When opacity < 1.0, disable expensive rendering features (shadows, gradients)
+  // This makes dimmed components render much faster
+  const fastRenderMode = componentOpacity < 1.0;
+
+  // SMART LAYER SEPARATION:
+  // Split components into cached (background) and active (selected) for optimal performance
+  // CRITICAL: Selected components must ALWAYS render, even when componentOpacity < 0.15
+  const { backgroundComponents, activeComponents } = useMemo(() => {
+    const selectedComponentIds = new Set(
+      selectedItems.filter(id => {
+        // Component IDs start with 'comp-'
+        // Wires, strips, and other items have different prefixes
+        return id.startsWith('comp-');
+      })
+    );
+    
+    // When heavily dimmed (< 0.15), only render selected components
+    if (componentOpacity < 0.15) {
+      return {
+        backgroundComponents: [],
+        activeComponents: renderableComponents.filter(c => selectedComponentIds.has(c.id))
+      };
+    }
+    
+    // Normal case: split components based on selection
+    return {
+      backgroundComponents: renderableComponents.filter(c => !selectedComponentIds.has(c.id)),
+      activeComponents: renderableComponents.filter(c => selectedComponentIds.has(c.id))
+    };
+  }, [renderableComponents, selectedItems, componentOpacity]);
+
+  // LAYER CACHING FOR BACKGROUND:
+  // Cache the background layer (unselected components) when dimmed
+  // CRITICAL: Clear cache immediately when selection changes, then re-cache after render
+  // CRITICAL: Disable caching during drag for real-time updates
+  useEffect(() => {
+    if (!cachedComponentLayerRef.current) return;
+    
+    const layer = cachedComponentLayerRef.current;
+    
+    // Always clear cache immediately when dependencies change
+    layer.clearCache();
+    
+    // During drag: keep uncached at full opacity (individual components handle dimming)
+    if (isDragging) {
+      layer.opacity(1);
+      layer.batchDraw();
+      return;
+    }
+    
+    // Determine if we should cache
+    const shouldCache = componentOpacity < 1.0 && componentOpacity >= 0.15;
+    
+    if (shouldCache) {
+      // Force immediate render at full opacity (components handle their own opacity)
+      layer.opacity(1);
+      layer.batchDraw();
+      
+      requestAnimationFrame(() => {
+        if (cachedComponentLayerRef.current && !isDragging) {
+          cachedComponentLayerRef.current.cache();
+          // Keep layer at full opacity - components have individual opacity
+          cachedComponentLayerRef.current.opacity(1);
+          cachedComponentLayerRef.current.batchDraw();
+        }
+      });
+    } else {
+      // No caching needed, just set opacity
+      layer.opacity(1);
+      layer.batchDraw();
+    }
+  }, [componentOpacity, backgroundComponents.length, highlightedNetId, selectedItems, isDragging]);
+
+  // ACTIVE LAYER ALWAYS AT FULL OPACITY:
+  // Selected components must be bright for interaction
+  useEffect(() => {
+    if (!activeComponentLayerRef.current) return;
+    
+    const layer = activeComponentLayerRef.current;
+    layer.clearCache(); // Never cache the active layer
+    layer.opacity(1); // Always full brightness for selected items
+    layer.batchDraw();
+  }, [componentOpacity, selectedItems, activeComponents.length]); // Update when selection changes!
+
+  // Filter out wires that would be dimmed
+  const renderableWires = useMemo(() => {
+    if (!highlightedNetId) return visibleWires;
+    
+    return visibleWires.filter(w => {
+      const detectedNetId = connectivity.wireNets.get(w.id) || w.netId || null;
+      return detectedNetId === highlightedNetId;
+    });
+  }, [visibleWires, highlightedNetId, connectivity.wireNets]);
+
+  // Create a fast lookup map for component definitions
+  const definitionMap = useMemo(() => {
+    const map = new Map<string, ComponentDefinition>();
+    for (const def of componentDefinitions) {
+      map.set(def.id, def);
+    }
+    return map;
+  }, [componentDefinitions]);
 
   // Reset drawing state when tool changes
   useEffect(() => {
@@ -736,6 +858,9 @@ export const StripboardCanvas = () => {
           lastContentX: interaction.startContentX,
           lastContentY: interaction.startContentY,
         };
+        
+        // Set dragging state to disable caching for real-time updates
+        setIsDragging(true);
       }
       return;
     }
@@ -789,6 +914,11 @@ export const StripboardCanvas = () => {
           moveSelectedItems(deltaRow, deltaCol);
           interaction.lastGridRow = newGridRow;
           interaction.lastGridCol = newGridCol;
+          
+          // Force immediate redraw of active layer during drag
+          if (activeComponentLayerRef.current) {
+            activeComponentLayerRef.current.batchDraw();
+          }
         }
       }
       return;
@@ -880,6 +1010,7 @@ export const StripboardCanvas = () => {
     // ── Drag complete → nothing more to do ──────────────
     if (interaction.type === 'dragging') {
       // History was saved at drag start; drag is done.
+      setIsDragging(false); // Re-enable caching
       return;
     }
 
@@ -1202,8 +1333,39 @@ export const StripboardCanvas = () => {
             ))}
         </Layer>
 
-        {/* Layer 2: Interactive content (ref image + components + wires) */}
-        <Layer>
+        {/* Layer 2a: Cached background components (dimmed, unselected) */}
+        <Layer ref={cachedComponentLayerRef}>
+          {/* Background (unselected) components */}
+          {layerVisibility.components &&
+            backgroundComponents.map((c: ComponentType) => {
+              const def = definitionMap.get(c.definitionId);
+              if (!def) return null;
+              
+              const compFilterMatch = !componentFilterActive ||
+                c.reference.toLowerCase().includes(componentSearchFilter.toLowerCase()) ||
+                (c.value || '').toLowerCase().includes(componentSearchFilter.toLowerCase()) ||
+                (def.name || '').toLowerCase().includes(componentSearchFilter.toLowerCase());
+              return (
+                <Component
+                  key={c.id}
+                  component={c}
+                  definition={def}
+                  isSelected={false}
+                  showRefs={layerVisibility.refDesignations}
+                  showValues={layerVisibility.values}
+                  highlightedNetId={componentFilterActive && !compFilterMatch ? '__dim__' : highlightedNetId}
+                  hlNetColor={hlNetColor}
+                  connectedGroups={highlightedNetId ? connectivity.connectedGroups : undefined}
+                  zoom={zoom}
+                  opacity={componentOpacity}
+                  disableShadows={fastRenderMode}
+                />
+              );
+            })}
+        </Layer>
+
+        {/* Layer 2b: Active components + wires (uncached, for smooth interaction) */}
+        <Layer ref={activeComponentLayerRef}>
           {/* Reference images (below components when not on-top) */}
           {referenceImages
             .filter((img) => img.visible && !img.onTop)
@@ -1251,10 +1413,10 @@ export const StripboardCanvas = () => {
             />
           )}
 
-          {/* Components */}
+          {/* Active (selected) components */}
           {layerVisibility.components &&
-            visibleComponents.map((c: ComponentType) => {
-              const def = componentDefinitions.find(d => d.id === c.definitionId);
+            activeComponents.map((c: ComponentType) => {
+              const def = definitionMap.get(c.definitionId);
               if (!def) {
                 // Definition not found - this shouldn't happen but render pins anyway to show something
                 console.warn(`Component ${c.reference} (${c.id}) has invalid definitionId: ${c.definitionId}`);
@@ -1279,8 +1441,7 @@ export const StripboardCanvas = () => {
                   </Group>
                 );
               }
-              const compFilterActive = componentSearchFilter.trim().length > 0;
-              const compFilterMatch = !compFilterActive ||
+              const compFilterMatch = !componentFilterActive ||
                 c.reference.toLowerCase().includes(componentSearchFilter.toLowerCase()) ||
                 (c.value || '').toLowerCase().includes(componentSearchFilter.toLowerCase()) ||
                 (def.name || '').toLowerCase().includes(componentSearchFilter.toLowerCase());
@@ -1292,18 +1453,19 @@ export const StripboardCanvas = () => {
                   isSelected={selectedItems.includes(c.id)}
                   showRefs={layerVisibility.refDesignations}
                   showValues={layerVisibility.values}
-                  highlightedNetId={compFilterActive && !compFilterMatch ? '__dim__' : highlightedNetId}
+                  highlightedNetId={componentFilterActive && !compFilterMatch ? '__dim__' : highlightedNetId}
                   hlNetColor={hlNetColor}
-                  connectedGroups={connectivity.connectedGroups}
+                  connectedGroups={highlightedNetId ? connectivity.connectedGroups : undefined}
                   zoom={zoom}
-                  opacity={componentOpacity}
+                  opacity={1}
+                  disableShadows={false} // Selected components always render with full quality
                 />
               );
             })}
 
           {/* Wires */}
           {layerVisibility.wires &&
-            visibleWires.map((w: WireType) => {
+            renderableWires.map((w: WireType) => {
               const detectedNetId = connectivity.wireNets.get(w.id) || null;
               const hasError = connectivity.wireErrors.has(w.id);
               
