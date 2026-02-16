@@ -192,6 +192,7 @@ export type ProjectData = {
   wires: Wire[];
   nets: Net[];
   stripColor?: string; // Optional for backward compatibility
+  customDefinitions?: ComponentDefinition[]; // Custom component definitions (generic/custom)
 };
 
 export type NetHighlightMode = 'full' | 'connections';

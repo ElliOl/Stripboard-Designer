@@ -1152,6 +1152,10 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
   // ─── Project ──────────────────────────────────────────────
   exportProject: () => {
     const state = get();
+    // Extract custom component definitions (generic/custom) that should be saved with the project
+    const customDefinitions = state.componentDefinitions.filter(
+      (d) => d.id.startsWith('generic-') || d.id.startsWith('custom-')
+    );
     return {
       version: '1.0',
       board: { rows: state.rows, cols: state.cols },
@@ -1161,6 +1165,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       wires: state.wires,
       nets: state.nets,
       stripColor: state.stripColor,
+      customDefinitions: customDefinitions.length > 0 ? customDefinitions : undefined,
     };
   },
 
@@ -1206,6 +1211,16 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       }
     }
 
+    // Load custom component definitions from the project
+    const state = get();
+    const customDefinitions = data.customDefinitions ?? [];
+    
+    // Merge custom definitions with existing library definitions
+    // Keep existing library definitions, add custom ones that don't exist
+    const existingIds = new Set(state.componentDefinitions.map((d) => d.id));
+    const newCustomDefs = customDefinitions.filter((d) => !existingIds.has(d.id));
+    const mergedDefinitions = [...state.componentDefinitions, ...newCustomDefs];
+
     set({
       rows,
       cols,
@@ -1215,6 +1230,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       wires: data.wires ?? [],
       nets: data.nets ?? [],
       stripColor: data.stripColor ?? '#4a4a4a', // Default to dark grey if not specified
+      componentDefinitions: mergedDefinitions,
       selectedItems: [],
       importReport: null,
       past: [],
