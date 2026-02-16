@@ -206,11 +206,48 @@ export function isVirtualRef(ref: string): boolean {
 // built-in component definitions.  Returns `null` when the
 // footprint / ref cannot be confidently mapped.
 
+/**
+ * Normalize a string for fuzzy matching:
+ * - lowercase
+ * - remove version numbers (v1, v2, v3.x, etc.)
+ * - remove underscores, hyphens
+ * - remove common suffixes like "module", "board", etc.
+ */
+function normalizeForMatching(str: string): string {
+  return str
+    .toLowerCase()
+    .replace(/[_-]/g, ' ')  // replace with space first to preserve word boundaries
+    .replace(/\bv\d+(\.[0-9x]+)*/g, '') // remove version like v3, v3.x, v3.0, v3.2.1
+    .replace(/\b(module|board|breakout)\b/g, '')
+    .replace(/\s+/g, '')  // then remove all spaces
+    .trim();
+}
+
+/**
+ * Check if a normalized string contains all words from a target pattern.
+ * Example: "arduinonano" contains ["arduino", "nano"]
+ */
+function fuzzyContains(normalized: string, words: string[]): boolean {
+  return words.every(word => normalized.includes(word));
+}
+
 export function mapFootprintToDefinition(
   footprint: string,
-  ref: string
+  ref: string,
+  value?: string
 ): string | null {
   const fp = footprint.toLowerCase();
+  const fpNorm = normalizeForMatching(footprint);
+  const valNorm = value ? normalizeForMatching(value) : '';
+
+  // ── MCU / Development Boards (check first for specific matches) ──
+  // Check both footprint and value fields for better matching
+  const combinedNorm = fpNorm + ' ' + valNorm;
+  
+  if (fuzzyContains(combinedNorm, ['arduino', 'nano'])) return 'mcu-arduino-nano';
+  if (fuzzyContains(combinedNorm, ['daisy', 'seed'])) return 'mcu-daisy-seed';
+  if (fuzzyContains(combinedNorm, ['bluepill']) || fuzzyContains(combinedNorm, ['blue', 'pill'])) return 'mcu-bluepill';
+  if (fuzzyContains(combinedNorm, ['seeed', 'xiao']) || fuzzyContains(combinedNorm, ['xiao'])) return 'mcu-seeed-xiao';
 
   // DIP packages - match various formats like DIP-8, DIP_8, DIP-8_W7.62mm, Package_DIP:DIP-8, etc.
   if (/dip[-_]?8(?:\D|$)/.test(fp)) return 'dip-8';

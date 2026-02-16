@@ -979,7 +979,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
         continue;
       }
 
-      let defId = mapFootprintToDefinition(pc.footprint, pc.ref);
+      let defId = mapFootprintToDefinition(pc.footprint, pc.ref, pc.value);
       let def = defId ? defs.find((d) => d.id === defId) : null;
 
       // ── Unknown / missing definition → create generic component ──
