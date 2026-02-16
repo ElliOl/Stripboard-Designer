@@ -71,6 +71,13 @@ type InteractionState =
       startScreenY: number;
       startPanX: number;
       startPanY: number;
+    }
+  | {
+      type: 'cutDragging';
+      mode: 'add' | 'remove';
+      lastGridRow: number;
+      lastGridCol: number;
+      visitedPositions: Set<string>; // track "row:col" strings to avoid double-toggling
     };
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -126,6 +133,8 @@ export const StripboardCanvas = () => {
   const addComponent = useStripboardStore((s) => s.addComponent);
   const addWire = useStripboardStore((s) => s.addWire);
   const toggleCut = useStripboardStore((s) => s.toggleCut);
+  const addCut = useStripboardStore((s) => s.addCut);
+  const removeCut = useStripboardStore((s) => s.removeCut);
   const saveToHistory = useStripboardStore((s) => s.saveToHistory);
   const rotateComponent = useStripboardStore((s) => s.rotateComponent);
   const removeComponent = useStripboardStore((s) => s.removeComponent);
@@ -606,6 +615,48 @@ export const StripboardCanvas = () => {
       };
       return;
     }
+
+    // ── Cut tool: start cut dragging ─────────────────────
+    if (activeTool === 'cutStrip') {
+      const stage = stageRef.current;
+      const pointer = stage?.getPointerPosition();
+      if (!pointer) return;
+
+      const grid = clampToBoard(screenToGrid(pointer.x, pointer.y));
+      
+      // Check if there's already a cut at this position
+      const strip = strips.find(
+        (s) => s.row === grid.row && grid.col >= s.startCol && grid.col <= s.endCol
+      );
+      if (!strip) return;
+
+      // Save history once at the start of the drag
+      saveToHistory();
+      
+      // Determine mode: if there's already a cut here, we'll be removing; otherwise adding
+      const hasCut = strip.breaks.includes(grid.col);
+      const mode = hasCut ? 'remove' : 'add';
+      
+      // Apply the first cut/remove
+      if (mode === 'add') {
+        addCut(grid.row, grid.col);
+      } else {
+        removeCut(grid.row, grid.col);
+      }
+      
+      // Set up tracking for drag
+      const visitedPositions = new Set<string>();
+      visitedPositions.add(`${grid.row}:${grid.col}`);
+      
+      interactionRef.current = {
+        type: 'cutDragging',
+        mode,
+        lastGridRow: grid.row,
+        lastGridCol: grid.col,
+        visitedPositions,
+      };
+      return;
+    }
   };
 
   // ─── MOUSE MOVE (Konva) ───────────────────────────────────
@@ -745,6 +796,41 @@ export const StripboardCanvas = () => {
       }
       return;
     }
+
+    // ── Active CUT DRAGGING → apply cuts/removals as we drag ───
+    if (interaction.type === 'cutDragging') {
+      const grid = clampToBoard(screenToGrid(pointer.x, pointer.y));
+      
+      // Only process if we've moved to a new grid position
+      if (grid.row !== interaction.lastGridRow || grid.col !== interaction.lastGridCol) {
+        const posKey = `${grid.row}:${grid.col}`;
+        
+        // Only apply if we haven't visited this position yet
+        if (!interaction.visitedPositions.has(posKey)) {
+          // Check if this position is on a strip
+          const strip = strips.find(
+            (s) => s.row === grid.row && grid.col >= s.startCol && grid.col <= s.endCol
+          );
+          
+          if (strip) {
+            // Apply the cut/remove based on the initial mode
+            if (interaction.mode === 'add') {
+              addCut(grid.row, grid.col);
+            } else {
+              removeCut(grid.row, grid.col);
+            }
+            
+            // Mark this position as visited
+            interaction.visitedPositions.add(posKey);
+          }
+        }
+        
+        // Update last position
+        interaction.lastGridRow = grid.row;
+        interaction.lastGridCol = grid.col;
+      }
+      return;
+    }
   };
 
   // ─── MOUSE UP (Konva — left button) ───────────────────────
@@ -797,6 +883,12 @@ export const StripboardCanvas = () => {
     // ── Drag complete → nothing more to do ──────────────
     if (interaction.type === 'dragging') {
       // History was saved at drag start; drag is done.
+      return;
+    }
+
+    // ── Cut dragging complete → nothing more to do ──────
+    if (interaction.type === 'cutDragging') {
+      // History was saved at drag start; cuts/removals applied during drag.
       return;
     }
   };

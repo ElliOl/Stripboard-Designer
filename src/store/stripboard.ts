@@ -161,6 +161,10 @@ interface StripboardStore extends StripboardState {
 
   // Bulk movement
   moveSelectedItems: (deltaRow: number, deltaCol: number) => void;
+  
+  // Copy / Paste
+  copySelected: () => void;
+  paste: () => void;
 
   // Net highlighting
   setHighlightedNet: (netId: string | null) => void;
@@ -205,6 +209,17 @@ interface StripboardStore extends StripboardState {
 
 const INITIAL_ROWS = 30;
 const INITIAL_COLS = 50;
+
+// ─── Clipboard State (separate from the store) ────────────────
+let clipboard: {
+  components: Component[];
+  wires: Wire[];
+  cuts: { row: number; col: number }[];
+  images: ReferenceImageState[];
+} | null = null;
+
+// Track consecutive paste count to prevent stacking
+let pasteCount = 0;
 
 const initialState: StripboardState = {
   rows: INITIAL_ROWS,
@@ -562,15 +577,23 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
 
   // ─── Selection ────────────────────────────────────────────
   selectItem: (id, multi = false) =>
-    set((state) => ({
-      selectedItems: multi
-        ? state.selectedItems.includes(id)
-          ? state.selectedItems.filter((i) => i !== id)
-          : [...state.selectedItems, id]
-        : [id],
-    })),
+    set((state) => {
+      // Reset paste count when selection changes (user is doing something else)
+      if (!multi) pasteCount = 0;
+      
+      return {
+        selectedItems: multi
+          ? state.selectedItems.includes(id)
+            ? state.selectedItems.filter((i) => i !== id)
+            : [...state.selectedItems, id]
+          : [id],
+      };
+    }),
 
-  setSelectedItems: (ids) => set({ selectedItems: ids }),
+  setSelectedItems: (ids) => {
+    pasteCount = 0; // Reset paste count on new selection
+    set({ selectedItems: ids });
+  },
 
   addToSelection: (ids) =>
     set((state) => ({
@@ -582,7 +605,10 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       selectedItems: state.selectedItems.filter((i) => !ids.includes(i)),
     })),
 
-  deselectAll: () => set({ selectedItems: [], highlightedNetId: null }),
+  deselectAll: () => {
+    pasteCount = 0; // Reset paste count when deselecting
+    set({ selectedItems: [], highlightedNetId: null });
+  },
 
   setHoveredItem: (id) => set({ hoveredItem: id }),
 
@@ -633,6 +659,9 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
   // ─── Bulk Movement ──────────────────────────────────────────
   moveSelectedItems: (deltaRow, deltaCol) =>
     set((state) => {
+      // Reset paste count when items are moved
+      pasteCount = 0;
+      
       // Parse selected cuts → { oldRow, oldCol, newRow, newCol }
       const CUT_RE = /^cut-(\d+)-(\d+)$/;
       const cutMoves = state.selectedItems
@@ -1048,6 +1077,145 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
   },
 
   dismissImportReport: () => set({ importReport: null }),
+
+  // ─── Copy / Paste ──────────────────────────────────────────
+  copySelected: () => {
+    const state = get();
+    if (state.selectedItems.length === 0) return;
+
+    // Parse cuts from selected items
+    const CUT_RE = /^cut-(\d+)-(\d+)$/;
+    const cuts = state.selectedItems
+      .map((id) => id.match(CUT_RE))
+      .filter((m): m is RegExpMatchArray => m !== null)
+      .map((m) => ({ row: +m[1], col: +m[2] }));
+
+    // Parse images from selected items
+    const images = state.referenceImages.filter((img) =>
+      state.selectedItems.includes(img.id)
+    );
+
+    // Clone components (deep copy)
+    const components = state.components
+      .filter((c) => state.selectedItems.includes(c.id))
+      .map((c) => JSON.parse(JSON.stringify(c)) as Component);
+
+    // Clone wires (deep copy)
+    const wires = state.wires
+      .filter((w) => state.selectedItems.includes(w.id))
+      .map((w) => JSON.parse(JSON.stringify(w)) as Wire);
+
+    clipboard = { components, wires, cuts, images };
+    
+    // Reset paste count when new content is copied
+    pasteCount = 0;
+  },
+
+  paste: () => {
+    if (!clipboard) return;
+    const state = get();
+
+    // Increment paste count for cascading offset
+    pasteCount++;
+    
+    // Calculate offset: each paste goes further to prevent stacking
+    // First paste: 2 units, second: 4 units, third: 6 units, etc.
+    const PASTE_OFFSET = 2 * pasteCount;
+
+    // Save history before paste
+    state.saveToHistory();
+
+    // ── Paste Components ──────────────────────────────────────
+    const newComponents: Component[] = [];
+    for (const comp of clipboard.components) {
+      // Find the definition
+      const def = state.componentDefinitions.find((d) => d.id === comp.definitionId);
+      if (!def) continue;
+
+      // Generate a unique reference
+      const prefix = comp.reference.replace(/[0-9]/g, '');
+      const nums = state.components
+        .filter((c) => c.reference.startsWith(prefix))
+        .map((c) => parseInt(c.reference.slice(prefix.length)))
+        .filter((n) => !isNaN(n));
+      const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+      const newReference = `${prefix}${nextNum}`;
+
+      // Create new component with offset position
+      const newPos = {
+        row: comp.position.row + PASTE_OFFSET,
+        col: comp.position.col + PASTE_OFFSET,
+      };
+
+      newComponents.push({
+        ...comp,
+        id: `comp-${Date.now()}-${Math.random()}`,
+        reference: newReference,
+        position: newPos,
+        pins: comp.pins.map((pin) => ({
+          ...pin,
+          position: {
+            row: pin.position.row + PASTE_OFFSET,
+            col: pin.position.col + PASTE_OFFSET,
+          },
+        })),
+      });
+    }
+
+    // ── Paste Wires ───────────────────────────────────────────
+    const newWires: Wire[] = clipboard.wires.map((w) => ({
+      ...w,
+      id: `wire-${Date.now()}-${Math.random()}`,
+      points: w.points.map((p) => ({
+        row: p.row + PASTE_OFFSET,
+        col: p.col + PASTE_OFFSET,
+      })),
+    }));
+
+    // ── Paste Cuts ────────────────────────────────────────────
+    const newCuts = clipboard.cuts.map((c) => ({
+      row: c.row + PASTE_OFFSET,
+      col: c.col + PASTE_OFFSET,
+    }));
+
+    // ── Paste Images ──────────────────────────────────────────
+    const GRID_PITCH = 25.4;
+    const newImages: ReferenceImageState[] = clipboard.images.map((img) => ({
+      ...img,
+      id: `refimg-${Date.now()}-${Math.random()}`,
+      x: img.x + PASTE_OFFSET * GRID_PITCH,
+      y: img.y + PASTE_OFFSET * GRID_PITCH,
+    }));
+
+    // Apply updates to state
+    set((s) => {
+      // Add cuts to strips
+      let strips = s.strips;
+      for (const cut of newCuts) {
+        strips = strips.map((strip) =>
+          strip.row === cut.row &&
+          cut.col >= strip.startCol &&
+          cut.col <= strip.endCol &&
+          !strip.breaks.includes(cut.col)
+            ? { ...strip, breaks: [...strip.breaks, cut.col].sort((a, b) => a - b) }
+            : strip
+        );
+      }
+
+      return {
+        components: [...s.components, ...newComponents],
+        wires: [...s.wires, ...newWires],
+        strips,
+        referenceImages: [...s.referenceImages, ...newImages],
+        selectedItems: [
+          ...newComponents.map((c) => c.id),
+          ...newWires.map((w) => w.id),
+          ...newCuts.map((c) => `cut-${c.row}-${c.col}`),
+          ...newImages.map((img) => img.id),
+        ],
+      };
+    });
+  },
 
   // ─── Reset ────────────────────────────────────────────────
   reset: () => set({
