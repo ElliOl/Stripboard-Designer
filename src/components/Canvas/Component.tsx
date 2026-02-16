@@ -1,7 +1,7 @@
 import { useMemo, memo } from 'react';
 import { Group, Rect, Circle, Text, Line, Arc } from 'react-konva';
 import type { Component as ComponentType, ComponentDefinition } from '@/lib/types';
-import { getRotatedPinPositions } from '@/lib/rotation';
+// Pin positions are now derived from actual component.pins (supports dragged/custom layouts)
 import { posKey } from '@/lib/spatial-index';
 import { resistorValueToBands, resolveLedColor } from '@/lib/resistor-colors';
 
@@ -206,11 +206,12 @@ const ComponentImpl = ({
   // CRITICAL PERFORMANCE: Disable shadows when opacity < 1.0 (dimmed state)
   const showShadows = zoom > 0.4 && !disableShadows;
 
-  // ─── Rotated positions (relative to component origin) ────
-  const rotatedPins = getRotatedPinPositions(
-    definition.pins,
-    component.rotation
-  );
+  // ─── Actual pin positions (relative to component origin) ────
+  // Use actual component pin positions so drag/custom layouts render correctly
+  const rotatedPins = component.pins.map((p) => ({
+    row: p.position.row - component.position.row,
+    col: p.position.col - component.position.col,
+  }));
 
   const rMinRow = Math.min(...rotatedPins.map((p) => p.row));
   const rMaxRow = Math.max(...rotatedPins.map((p) => p.row));
@@ -245,8 +246,16 @@ const ComponentImpl = ({
   // Pin 1 rotated position (for the notch marker)
   const pin1 = rotatedPins[0];
 
-  // Is component horizontal or vertical?
+  // Is component horizontal or diagonal?
   const isHoriz = rMinRow === rMaxRow;
+
+  // Pin distance for 2-pin components (in grid units)
+  const pinDist = definition.pins.length === 2
+    ? Math.sqrt(
+        Math.pow(rotatedPins[1].row - rotatedPins[0].row, 2) +
+        Math.pow(rotatedPins[1].col - rotatedPins[0].col, 2)
+      )
+    : 0;
 
   // ─── Resistor color bands (computed from value) ────────────
   const resistorBands = useMemo(() => {
@@ -277,7 +286,10 @@ const ComponentImpl = ({
   })();
 
   const finalOpacity = opacity;
-  const isResistorUpright = subtype === 'resistor' && definition.id === 'resistor-upright';
+  // Adjacent pins (distance 1) auto-convert to upright resistor
+  const isResistorUpright = subtype === 'resistor' && (
+    definition.id === 'resistor-upright' || pinDist <= 1.01
+  );
 
   // ─── Diode detection ──────────────────────────────────────
   const isDiode = subtype === 'diode';
@@ -518,98 +530,48 @@ const ComponentImpl = ({
         );
       })()}
 
-      {/* ─── Axial Body (Resistor / Diode / Capacitor-Rect) ─── */}
-      {isAxial && !isResistorUpright && subtype === 'resistor' && (
-        <>
-          {isHoriz ? (
-            <>
-              {/* Horizontal legs */}
-              <Line
-                points={[rMinCol * GP, rMinRow * GP, (rMinCol + 0.6) * GP, rMinRow * GP]}
-                stroke="#888"
-                strokeWidth={1.5}
-                listening={false}
-              />
-              <Line
-                points={[(rMaxCol - 0.6) * GP, rMinRow * GP, rMaxCol * GP, rMinRow * GP]}
-                stroke="#888"
-                strokeWidth={1.5}
-                listening={false}
-              />
-              {/* Blue 1% body */}
-              <Rect
-                x={(rMinCol + 0.5) * GP}
-                y={rMinRow * GP - 5}
-                width={Math.max((rMaxCol - rMinCol - 1) * GP, GP * 0.3)}
-                height={10}
-                fill={customColor || '#2a4a7a'}
-                stroke={isSelected ? '#c8ff2e' : customStroke || '#1a3a6a'}
-                strokeWidth={isSelected ? 2 : 1}
-                cornerRadius={2}
-              />
-              {/* 5-band color code — horizontal */}
-              {(resistorBands || ['#8B4513', '#000', '#000', '#000', '#8B4513']).map((color, i) => {
-                const bandPositions = [0.15, 0.3, 0.45, 0.65, 0.85];
-                const bodyLen = Math.max(rMaxCol - rMinCol - 1, 0.3);
-                return (
-                  <Rect
-                    key={`band-${i}`}
-                    x={((rMinCol + 0.5) + bandPositions[i] * bodyLen) * GP - 1}
-                    y={rMinRow * GP - 4}
-                    width={2}
-                    height={8}
-                    fill={color}
-                    listening={false}
-                  />
-                );
-              })}
-            </>
-          ) : (
-            <>
-              {/* Vertical legs */}
-              <Line
-                points={[rMinCol * GP, rMinRow * GP, rMinCol * GP, (rMinRow + 0.6) * GP]}
-                stroke="#888"
-                strokeWidth={1.5}
-                listening={false}
-              />
-              <Line
-                points={[rMinCol * GP, (rMaxRow - 0.6) * GP, rMinCol * GP, rMaxRow * GP]}
-                stroke="#888"
-                strokeWidth={1.5}
-                listening={false}
-              />
-              {/* Blue 1% body — vertical */}
-              <Rect
-                x={rMinCol * GP - 5}
-                y={(rMinRow + 0.5) * GP}
-                width={10}
-                height={Math.max((rMaxRow - rMinRow - 1) * GP, GP * 0.3)}
-                fill={customColor || '#2a4a7a'}
-                stroke={isSelected ? '#c8ff2e' : customStroke || '#1a3a6a'}
-                strokeWidth={isSelected ? 2 : 1}
-                cornerRadius={2}
-              />
-              {/* 5-band color code — vertical */}
-              {(resistorBands || ['#8B4513', '#000', '#000', '#000', '#8B4513']).map((color, i) => {
-                const bandPositions = [0.15, 0.3, 0.45, 0.65, 0.85];
-                const bodyLen = Math.max(rMaxRow - rMinRow - 1, 0.3);
-                return (
-                  <Rect
-                    key={`band-${i}`}
-                    x={rMinCol * GP - 4}
-                    y={((rMinRow + 0.5) + bandPositions[i] * bodyLen) * GP - 1}
-                    width={8}
-                    height={2}
-                    fill={color}
-                    listening={false}
-                  />
-                );
-              })}
-            </>
-          )}
-        </>
-      )}
+      {/* ─── Axial Body (Resistor) — unified for H/V/diagonal ─── */}
+      {isAxial && !isResistorUpright && subtype === 'resistor' && (() => {
+        const p1x = rotatedPins[0].col * GP;
+        const p1y = rotatedPins[0].row * GP;
+        const p2x = rotatedPins[1].col * GP;
+        const p2y = rotatedPins[1].row * GP;
+        const dxP = p2x - p1x;
+        const dyP = p2y - p1y;
+        const dist = Math.sqrt(dxP * dxP + dyP * dyP);
+        const angle = Math.atan2(dyP, dxP) * 180 / Math.PI;
+        const halfDist = dist / 2;
+        // Fixed body size, legs extend to reach pins
+        const bodyLen = Math.min(GP * 1.4, dist - GP * 0.2);
+        const halfBody = bodyLen / 2;
+        return (
+          <Group x={(p1x + p2x) / 2} y={(p1y + p2y) / 2} rotation={angle}>
+            {/* Lead wires from pins to body */}
+            <Line points={[-halfDist, 0, -halfBody, 0]} stroke="#888" strokeWidth={1.5} listening={false} />
+            <Line points={[halfBody, 0, halfDist, 0]} stroke="#888" strokeWidth={1.5} listening={false} />
+            {/* Body */}
+            <Rect
+              x={-halfBody} y={-5} width={bodyLen} height={10}
+              fill={customColor || '#2a4a7a'}
+              stroke={isSelected ? '#c8ff2e' : customStroke || '#1a3a6a'}
+              strokeWidth={isSelected ? 2 : 1}
+              cornerRadius={2}
+            />
+            {/* 5-band color code */}
+            {(resistorBands || ['#8B4513', '#000', '#000', '#000', '#8B4513']).map((color, bi) => {
+              const bandPositions = [0.15, 0.3, 0.45, 0.65, 0.85];
+              return (
+                <Rect
+                  key={`band-${bi}`}
+                  x={-halfBody + bandPositions[bi] * bodyLen - 1}
+                  y={-4} width={2} height={8}
+                  fill={color} listening={false}
+                />
+              );
+            })}
+          </Group>
+        );
+      })()}
 
       {/* ─── Resistor Upright ──────────────────────────────────── */}
       {isAxial && isResistorUpright && (
@@ -636,176 +598,65 @@ const ComponentImpl = ({
         </>
       )}
 
-      {/* ─── Diode Body (Axial) ────────────────────────────────── */}
-      {isAxial && isDiode && (
-        <>
-          {isHoriz ? (
-            <>
-              {/* Horizontal legs */}
-              <Line
-                points={[rMinCol * GP, rMinRow * GP, (rMinCol + 0.6) * GP, rMinRow * GP]}
-                stroke="#888"
-                strokeWidth={1.5}
-                listening={false}
-              />
-              <Line
-                points={[(rMaxCol - 0.6) * GP, rMinRow * GP, rMaxCol * GP, rMinRow * GP]}
-                stroke="#888"
-                strokeWidth={1.5}
-                listening={false}
-              />
-              {/* Light grey diode body */}
-              <Rect
-                x={(rMinCol + 0.5) * GP}
-                y={rMinRow * GP - 5}
-                width={Math.max((rMaxCol - rMinCol - 1) * GP, GP * 0.3)}
-                height={10}
-                fill={customColor || (isZener ? '#5a5a6a' : '#8a8a9a')}
-                stroke={isSelected ? '#c8ff2e' : customStroke || '#6a6a7a'}
-                strokeWidth={isSelected ? 2 : 1}
-                cornerRadius={1}
-              />
-              {/* Cathode band at pin 2 end */}
-              <Rect
-                x={(rMaxCol - 0.6) * GP - 2}
-                y={rMinRow * GP - 5}
-                width={3}
-                height={10}
-                fill={isZener ? '#808080' : '#333333'}
-                listening={false}
-              />
-              {/* Zener extra mark */}
-              {isZener && (
-                <Rect
-                  x={(rMaxCol - 0.6) * GP - 5}
-                  y={rMinRow * GP - 5}
-                  width={2}
-                  height={10}
-                  fill="#808080"
-                  listening={false}
-                />
-              )}
-            </>
-          ) : (
-            <>
-              {/* Vertical legs */}
-              <Line
-                points={[rMinCol * GP, rMinRow * GP, rMinCol * GP, (rMinRow + 0.6) * GP]}
-                stroke="#888"
-                strokeWidth={1.5}
-                listening={false}
-              />
-              <Line
-                points={[rMinCol * GP, (rMaxRow - 0.6) * GP, rMinCol * GP, rMaxRow * GP]}
-                stroke="#888"
-                strokeWidth={1.5}
-                listening={false}
-              />
-              {/* Light grey diode body — vertical */}
-              <Rect
-                x={rMinCol * GP - 5}
-                y={(rMinRow + 0.5) * GP}
-                width={10}
-                height={Math.max((rMaxRow - rMinRow - 1) * GP, GP * 0.3)}
-                fill={customColor || (isZener ? '#5a5a6a' : '#8a8a9a')}
-                stroke={isSelected ? '#c8ff2e' : customStroke || '#6a6a7a'}
-                strokeWidth={isSelected ? 2 : 1}
-                cornerRadius={1}
-              />
-              {/* Cathode band at pin 2 end */}
-              <Rect
-                x={rMinCol * GP - 5}
-                y={(rMaxRow - 0.6) * GP - 2}
-                width={10}
-                height={3}
-                fill={isZener ? '#808080' : '#333333'}
-                listening={false}
-              />
-              {isZener && (
-                <Rect
-                  x={rMinCol * GP - 5}
-                  y={(rMaxRow - 0.6) * GP - 5}
-                  width={10}
-                  height={2}
-                  fill="#808080"
-                  listening={false}
-                />
-              )}
-            </>
-          )}
-        </>
-      )}
+      {/* ─── Diode Body (Axial) — unified for H/V/diagonal ──── */}
+      {isAxial && isDiode && (() => {
+        const p1x = rotatedPins[0].col * GP;
+        const p1y = rotatedPins[0].row * GP;
+        const p2x = rotatedPins[1].col * GP;
+        const p2y = rotatedPins[1].row * GP;
+        const dxP = p2x - p1x;
+        const dyP = p2y - p1y;
+        const dist = Math.sqrt(dxP * dxP + dyP * dyP);
+        const angle = Math.atan2(dyP, dxP) * 180 / Math.PI;
+        const halfDist = dist / 2;
+        const bodyLen = Math.min(GP * 1.3, dist - GP * 0.2);
+        const halfBody = bodyLen / 2;
+        return (
+          <Group x={(p1x + p2x) / 2} y={(p1y + p2y) / 2} rotation={angle}>
+            <Line points={[-halfDist, 0, -halfBody, 0]} stroke="#888" strokeWidth={1.5} listening={false} />
+            <Line points={[halfBody, 0, halfDist, 0]} stroke="#888" strokeWidth={1.5} listening={false} />
+            <Rect
+              x={-halfBody} y={-5} width={bodyLen} height={10}
+              fill={customColor || (isZener ? '#5a5a6a' : '#8a8a9a')}
+              stroke={isSelected ? '#c8ff2e' : customStroke || '#6a6a7a'}
+              strokeWidth={isSelected ? 2 : 1} cornerRadius={1}
+            />
+            {/* Cathode band at pin 2 end */}
+            <Rect x={halfBody - 3} y={-5} width={3} height={10} fill={isZener ? '#808080' : '#333333'} listening={false} />
+            {isZener && <Rect x={halfBody - 6} y={-5} width={2} height={10} fill="#808080" listening={false} />}
+          </Group>
+        );
+      })()}
 
-      {/* ─── Capacitor Rect (Film/Ceramic, Non-Polarized) ──────── */}
-      {isAxial && subtype === 'capacitor-rect' && (
-        <>
-          {isHoriz ? (
-            <>
-              <Line
-                points={[rMinCol * GP, rMinRow * GP, (rMinCol + 0.4) * GP, rMinRow * GP]}
-                stroke="#888"
-                strokeWidth={1.5}
-                listening={false}
-              />
-              <Line
-                points={[(rMaxCol - 0.4) * GP, rMinRow * GP, rMaxCol * GP, rMinRow * GP]}
-                stroke="#888"
-                strokeWidth={1.5}
-                listening={false}
-              />
-              <Rect
-                x={(rMinCol + 0.35) * GP}
-                y={rMinRow * GP - 7}
-                width={Math.max((rMaxCol - rMinCol - 0.7) * GP, GP * 0.4)}
-                height={14}
-                fill="#b8860b"
-                stroke={isSelected ? '#c8ff2e' : '#8B6914'}
-                strokeWidth={isSelected ? 2 : 1}
-                cornerRadius={1}
-              />
-              {/* "104" style marking */}
-              {showLabels && component.value && (
-                <Text
-                  x={(rMinCol + 0.35) * GP}
-                  y={rMinRow * GP - 4}
-                  width={Math.max((rMaxCol - rMinCol - 0.7) * GP, GP * 0.4)}
-                  text={component.value}
-                  fontSize={6}
-                  fontFamily="monospace"
-                  fill="#3a2a00"
-                  align="center"
-                  listening={false}
-                />
-              )}
-            </>
-          ) : (
-            <>
-              <Line
-                points={[rMinCol * GP, rMinRow * GP, rMinCol * GP, (rMinRow + 0.4) * GP]}
-                stroke="#888"
-                strokeWidth={1.5}
-                listening={false}
-              />
-              <Line
-                points={[rMinCol * GP, (rMaxRow - 0.4) * GP, rMinCol * GP, rMaxRow * GP]}
-                stroke="#888"
-                strokeWidth={1.5}
-                listening={false}
-              />
-              <Rect
-                x={rMinCol * GP - 7}
-                y={(rMinRow + 0.35) * GP}
-                width={14}
-                height={Math.max((rMaxRow - rMinRow - 0.7) * GP, GP * 0.4)}
-                fill="#b8860b"
-                stroke={isSelected ? '#c8ff2e' : '#8B6914'}
-                strokeWidth={isSelected ? 2 : 1}
-                cornerRadius={1}
-              />
-            </>
-          )}
-        </>
-      )}
+      {/* ─── Capacitor Rect (Film/Ceramic) — unified H/V/diagonal */}
+      {isAxial && subtype === 'capacitor-rect' && (() => {
+        const p1x = rotatedPins[0].col * GP;
+        const p1y = rotatedPins[0].row * GP;
+        const p2x = rotatedPins[1].col * GP;
+        const p2y = rotatedPins[1].row * GP;
+        const dxP = p2x - p1x;
+        const dyP = p2y - p1y;
+        const dist = Math.sqrt(dxP * dxP + dyP * dyP);
+        const angle = Math.atan2(dyP, dxP) * 180 / Math.PI;
+        const halfDist = dist / 2;
+        const bodyLen = Math.min(GP * 0.9, dist - GP * 0.2);
+        const halfBody = bodyLen / 2;
+        return (
+          <Group x={(p1x + p2x) / 2} y={(p1y + p2y) / 2} rotation={angle}>
+            <Line points={[-halfDist, 0, -halfBody, 0]} stroke="#888" strokeWidth={1.5} listening={false} />
+            <Line points={[halfBody, 0, halfDist, 0]} stroke="#888" strokeWidth={1.5} listening={false} />
+            <Rect
+              x={-halfBody} y={-7} width={bodyLen} height={14}
+              fill="#b8860b"
+              stroke={isSelected ? '#c8ff2e' : '#8B6914'}
+              strokeWidth={isSelected ? 2 : 1} cornerRadius={1}
+            />
+            {showLabels && component.value && (
+              <Text x={-halfBody} y={-4} width={bodyLen} text={component.value} fontSize={6} fontFamily="monospace" fill="#3a2a00" align="center" listening={false} />
+            )}
+          </Group>
+        );
+      })()}
 
       {/* ─── Radial Electrolytic Capacitor ─────────────────────── */}
       {isRadial && subtype === 'electrolytic' && (
@@ -1371,55 +1222,57 @@ const ComponentImpl = ({
         />
       )}
 
-      {/* ─── Axial (Resistor / Diode) text ──────────────────── */}
-      {isAxial && !isResistorUpright && showRefs && showLabels && (
-        <Text
-          x={isHoriz ? bodyX : rMinCol * GP + 9}
-          y={
-            isHoriz
-              ? rMinRow * GP - 17
-              : ((rMinRow + rMaxRow) / 2) * GP -
-                (showValues && component.value ? 9 : 4)
-          }
-          width={isHoriz ? bodyW : undefined}
-          text={component.reference}
-          fontSize={9}
-          fontFamily="monospace"
-          fill="#ccc"
-          align={isHoriz ? 'center' : undefined}
-          fontStyle="bold"
-          listening={false}
-        />
-      )}
-      {isAxial && !isResistorUpright && showValues && showLabels && component.value && subtype !== 'capacitor-rect' && (
-        <Text
-          x={isHoriz ? bodyX : rMinCol * GP + 9}
-          y={
-            isHoriz
-              ? rMinRow * GP + 10
-              : ((rMinRow + rMaxRow) / 2) * GP + (showRefs ? 2 : -4)
-          }
-          width={isHoriz ? bodyW : undefined}
-          text={component.value}
-          fontSize={8}
-          fontFamily="monospace"
-          fill="#a78bfa"
-          align={isHoriz ? 'center' : undefined}
-          listening={false}
-        />
-      )}
+      {/* ─── Axial (Resistor / Diode / Capacitor) text ──────────────────── */}
+      {isAxial && !isResistorUpright && showRefs && showLabels && (() => {
+        // Position reference beside component for small components
+        const isSmallComponent = subtype === 'resistor' || subtype === 'diode' || subtype === 'capacitor-rect';
+        const offsetX = isSmallComponent ? (bodyW / 2 + 8) : 0;
+        const offsetY = isSmallComponent ? -5 : -(showValues && component.value ? 17 : 13);
+        
+        return (
+          <Text
+            x={isSmallComponent ? bodyX + bodyW + 2 : cX - 20}
+            y={isSmallComponent ? bodyY + bodyH / 2 + offsetY : cY + offsetY}
+            width={isSmallComponent ? undefined : 40}
+            text={component.reference}
+            fontSize={9}
+            fontFamily="monospace"
+            fill="#ccc"
+            align={isSmallComponent ? undefined : "center"}
+            fontStyle="bold"
+            listening={false}
+          />
+        );
+      })()}
+      {isAxial && !isResistorUpright && showValues && showLabels && component.value && subtype !== 'capacitor-rect' && (() => {
+        // Position value beside component for small components
+        const isSmallComponent = subtype === 'resistor' || subtype === 'diode';
+        const offsetY = isSmallComponent ? (showRefs ? 3 : -5) : 10;
+        
+        return (
+          <Text
+            x={isSmallComponent ? bodyX + bodyW + 2 : cX - 20}
+            y={isSmallComponent ? bodyY + bodyH / 2 + offsetY : cY + offsetY}
+            width={isSmallComponent ? undefined : 40}
+            text={component.value}
+            fontSize={8}
+            fontFamily="monospace"
+            fill="#a78bfa"
+            align={isSmallComponent ? undefined : "center"}
+            listening={false}
+          />
+        );
+      })()}
 
       {/* ─── Resistor upright text ───────────────────────────── */}
       {isResistorUpright && showRefs && showLabels && (
         <Text
-          x={cX - 15}
-          y={cY + GP * 0.35}
-          width={30}
+          x={cX + GP * 0.35}
+          y={cY - 5}
           text={component.reference}
           fontSize={8}
           fontFamily="monospace"
           fill="#ccc"
-          align="center"
           fontStyle="bold"
           listening={false}
         />
@@ -1438,34 +1291,43 @@ const ComponentImpl = ({
         />
       )}
 
-      {/* ─── Radial text (centered inside body) ────────────── */}
-      {isRadial && showRefs && showLabels && (
-        <Text
-          x={cX - 20}
-          y={cY - (showValues && component.value ? 7 : 5)}
-          width={40}
-          text={component.reference}
-          fontSize={9}
-          fontFamily="monospace"
-          fill={customColor ? getTextColor(customColor) : '#e0e0e0'}
-          align="center"
-          fontStyle="bold"
-          listening={false}
-        />
-      )}
-      {isRadial && showValues && showLabels && component.value && (
-        <Text
-          x={cX - 20}
-          y={cY + (showRefs ? 2 : -5)}
-          width={40}
-          text={component.value}
-          fontSize={8}
-          fontFamily="monospace"
-          fill="#a78bfa"
-          align="center"
-          listening={false}
-        />
-      )}
+      {/* ─── Radial text (beside body for electrolytics, centered for others) ────────────── */}
+      {isRadial && showRefs && showLabels && (() => {
+        // Position reference beside component for electrolytic capacitors
+        const isBesidePosition = subtype === 'electrolytic';
+        
+        return (
+          <Text
+            x={isBesidePosition ? cX + radialRadius + 3 : cX - 20}
+            y={isBesidePosition ? cY - (showValues && component.value ? 7 : 5) : cY - (showValues && component.value ? 7 : 5)}
+            width={isBesidePosition ? undefined : 40}
+            text={component.reference}
+            fontSize={9}
+            fontFamily="monospace"
+            fill={customColor ? getTextColor(customColor) : '#e0e0e0'}
+            align={isBesidePosition ? undefined : "center"}
+            fontStyle="bold"
+            listening={false}
+          />
+        );
+      })()}
+      {isRadial && showValues && showLabels && component.value && (() => {
+        const isBesidePosition = subtype === 'electrolytic';
+        
+        return (
+          <Text
+            x={isBesidePosition ? cX + radialRadius + 3 : cX - 20}
+            y={isBesidePosition ? cY + (showRefs ? 2 : -5) : cY + (showRefs ? 2 : -5)}
+            width={isBesidePosition ? undefined : 40}
+            text={component.value}
+            fontSize={8}
+            fontFamily="monospace"
+            fill="#a78bfa"
+            align={isBesidePosition ? undefined : "center"}
+            listening={false}
+          />
+        );
+      })()}
 
       {/* ─── TO-92 text ─────────────────────────────────────── */}
       {isTO92 && showRefs && showLabels && (
@@ -1651,34 +1513,18 @@ const ComponentImpl = ({
 
         return (
           <Group key={`pin-text-${pinDef.number}`}>
-            {showRefs && (isIC || isCustom) && (
-              <Text
-                x={rp.col * GP - PIN_R}
-                y={rp.row * GP - 3.5}
-                width={PIN_R * 2}
-                text={pinDef.number}
-                fontSize={6}
-                fontFamily="monospace"
-                fill={isPinHighlighted ? '#fff' : '#111'}
-                fontStyle="bold"
-                align="center"
-                listening={false}
-              />
-            )}
-            {showRefs && !isIC && !isCustom && pinDef.name && (
-              <Text
-                x={rp.col * GP - PIN_R}
-                y={rp.row * GP - 3.5}
-                width={PIN_R * 2}
-                text={pinDef.name.charAt(0)}
-                fontSize={7}
-                fontFamily="monospace"
-                fill={isPinHighlighted ? '#fff' : '#111'}
-                fontStyle="bold"
-                align="center"
-                listening={false}
-              />
-            )}
+            <Text
+              x={rp.col * GP - PIN_R}
+              y={rp.row * GP - 3.5}
+              width={PIN_R * 2}
+              text={pinDef.number}
+              fontSize={6}
+              fontFamily="monospace"
+              fill={isPinHighlighted ? '#fff' : '#111'}
+              fontStyle="bold"
+              align="center"
+              listening={false}
+            />
           </Group>
         );
       })}
