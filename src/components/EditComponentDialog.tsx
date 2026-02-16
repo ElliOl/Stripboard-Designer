@@ -6,9 +6,10 @@ import {
   createDefinitionFromPlacements,
   type PinPlacement,
 } from '@/lib/component-utils';
+import { getRotatedPinPositions, unrotatePositions } from '@/lib/rotation';
 
 interface EditComponentDialogProps {
-  componentId: string;
+  componentIds: string[]; // Changed to array to support bulk editing
   onClose: () => void;
 }
 
@@ -20,7 +21,7 @@ const CELL = 28;
 const PIN_R = 9;
 
 export const EditComponentDialog = ({
-  componentId,
+  componentIds,
   onClose,
 }: EditComponentDialogProps) => {
   const {
@@ -31,11 +32,21 @@ export const EditComponentDialog = ({
     addComponentDefinition,
     saveToHistory,
   } = useStripboardStore();
+  
+  // Get the store instance for synchronous updates
+  const getStore = useStripboardStore.getState;
 
+  // For bulk editing, use the first component as the template
+  const componentId = componentIds[0];
   const component = components.find((c) => c.id === componentId);
   const definition = component
     ? componentDefinitions.find((d) => d.id === component.definitionId)
     : null;
+
+  const isBulkEdit = componentIds.length > 1;
+  
+  // Track selected variant for bulk editing
+  const [selectedVariantId, setSelectedVariantId] = useState(definition?.id || '');
 
   // ─── Form State ──────────────────────────────────────────
   const [reference, setReference] = useState(component?.reference ?? '');
@@ -57,13 +68,28 @@ export const EditComponentDialog = ({
     return Math.max(8, maxC + 3);
   });
 
+  // Track the original min position to detect when the component origin shifts
+  // These are in the ROTATED board space (how pins appear on the board)
+  const [originalMinPos, setOriginalMinPos] = useState<{ row: number; col: number }>(() => {
+    if (!definition || definition.pins.length === 0 || !component) return { row: 0, col: 0 };
+    // Get rotated positions (how they appear on board)
+    const rotatedPins = getRotatedPinPositions(definition.pins, component.rotation);
+    return {
+      row: Math.min(...rotatedPins.map((p) => p.row)),
+      col: Math.min(...rotatedPins.map((p) => p.col)),
+    };
+  });
+
+  // Pin placements in ROTATED space (board space) for intuitive editing
   const [pinPlacements, setPinPlacements] = useState<PinPlacement[]>(() => {
     if (!definition || !component) return [];
-    return definition.pins.map((p) => ({
-      row: p.position.row,
-      col: p.position.col,
-      number: p.number,
-      name: p.name ?? '',
+    // Show pins in their rotated positions so editing matches board appearance
+    const rotatedPins = getRotatedPinPositions(definition.pins, component.rotation);
+    return rotatedPins.map((p, i) => ({
+      row: p.row,
+      col: p.col,
+      number: definition.pins[i].number,
+      name: definition.pins[i].name ?? '',
     }));
   });
 
@@ -238,61 +264,188 @@ export const EditComponentDialog = ({
   // ─── Apply ──────────────────────────────────────────────
   const handleApply = useCallback(() => {
     if (!component || !definition) return;
-    if (pinPlacements.length === 0) return;
+    
+    // In bulk edit mode, we don't need pin placements
+    if (!isBulkEdit && pinPlacements.length === 0) return;
 
     saveToHistory();
 
-    // Check if pin layout has changed
-    const pinsChanged =
-      pinPlacements.length !== definition.pins.length ||
-      pinPlacements.some((pp, i) => {
-        const dp = definition.pins[i];
-        return (
-          pp.number !== dp.number ||
-          pp.name !== (dp.name ?? '') ||
-          pp.row !== dp.position.row ||
-          pp.col !== dp.position.col
-        );
-      });
-
-    let defIdToUse = definition.id;
-
-    // Only create new generic definition if pins actually changed
-    if (pinsChanged) {
-      const newDef = createDefinitionFromPlacements(footprintType, pinPlacements);
-      // Register the new definition if needed
-      if (!componentDefinitions.some((d) => d.id === newDef.id)) {
-        addComponentDefinition(newDef);
+    // Update component(s) - apply changes to all selected components in bulk edit
+    if (isBulkEdit) {
+      // Bulk edit: update common properties including variant if changed
+      const variantChanged = selectedVariantId !== definition?.id;
+      
+      for (const id of componentIds) {
+        const comp = components.find((c) => c.id === id);
+        if (!comp) continue;
+        
+        const updates: Partial<typeof comp> = {
+          value: value || undefined,
+          color: bodyColor || undefined,
+        };
+        
+        // If variant changed, update definition for all components
+        if (variantChanged) {
+          const newDef = componentDefinitions.find((d) => d.id === selectedVariantId);
+          if (newDef && newDef.pins.length === comp.pins.length) {
+            // Update definition and recalculate pin positions
+            const rotatedNewDefPins = getRotatedPinPositions(newDef.pins, comp.rotation);
+            
+            updates.definitionId = selectedVariantId;
+            updates.pins = rotatedNewDefPins.map((rotatedPos, i) => {
+              const oldPin = comp.pins[i];
+              return {
+                number: newDef.pins[i].number,
+                netId: oldPin?.netId,
+                position: {
+                  row: comp.position.row + rotatedPos.row,
+                  col: comp.position.col + rotatedPos.col,
+                },
+                extended: oldPin?.extended ?? 0,
+              };
+            });
+          }
+        }
+        
+        updateComponent(id, updates);
       }
-      defIdToUse = newDef.id;
+      
+      onClose();
+      return;
     }
 
-    // Rebuild component pins from the target definition
-    const targetDef = pinsChanged
-      ? componentDefinitions.find((d) => d.id === defIdToUse) ||
-        createDefinitionFromPlacements(footprintType, pinPlacements)
-      : definition;
+    // Single edit mode - continue with full pin editing logic
+    // Pin placements are in rotated board space - convert back to unrotated definition space
+    const unrotatedPlacements = unrotatePositions(
+      pinPlacements.map(p => ({ row: p.row, col: p.col })),
+      component.rotation
+    ).map((pos, i) => ({
+      ...pinPlacements[i],
+      row: pos.row,
+      col: pos.col,
+    }));
 
-    const newPins = targetDef.pins.map((pDef) => {
-      const oldPin = component.pins.find((p) => p.number === pDef.number);
+    // Check what has changed
+    const pinCountChanged = unrotatedPlacements.length !== definition.pins.length;
+    const pinNumbersChanged = !pinCountChanged && unrotatedPlacements.some((pp, i) => pp.number !== definition.pins[i].number);
+    const pinNamesChanged = !pinCountChanged && unrotatedPlacements.some((pp, i) => pp.name !== (definition.pins[i].name ?? ''));
+    const pinPositionsChanged = !pinCountChanged && unrotatedPlacements.some((pp, i) => {
+      const dp = definition.pins[i];
+      return pp.row !== dp.position.row || pp.col !== dp.position.col;
+    });
+    const footprintTypeChanged = footprintType !== definition.footprint.type;
+    
+    // Only create a new definition if structure changed (not just positions)
+    const needsNewDefinition = pinCountChanged || pinNumbersChanged || pinNamesChanged || footprintTypeChanged;
+
+    let defIdToUse = definition.id;
+    let targetDef = definition;
+    
+    // Calculate the current min position in rotated board space
+    const currentMinRow = Math.min(...pinPlacements.map((p) => p.row));
+    const currentMinCol = Math.min(...pinPlacements.map((p) => p.col));
+    
+    // Calculate the offset: how much the origin has shifted in board space
+    const offsetRow = currentMinRow - originalMinPos.row;
+    const offsetCol = currentMinCol - originalMinPos.col;
+    
+    // Adjust component position to compensate for the origin shift (in board space)
+    const newComponentPosition = {
+      row: component.position.row + offsetRow,
+      col: component.position.col + offsetCol,
+    };
+
+    // Only create new definition if structure changed
+    if (needsNewDefinition) {
+      // Create definition from UNROTATED placements
+      const newDef = createDefinitionFromPlacements(footprintType, unrotatedPlacements);
+      
+      // Add definition synchronously to ensure it's available before component update
+      const currentDefs = getStore().componentDefinitions;
+      if (!currentDefs.some((d) => d.id === newDef.id)) {
+        addComponentDefinition(newDef);
+      }
+      
+      defIdToUse = newDef.id;
+      targetDef = newDef;
+    } else if (pinPositionsChanged) {
+      // Positions changed but structure didn't - create a variant definition
+      // that preserves the original definition's base ID for subtype detection
+      const newDef = createDefinitionFromPlacements(footprintType, unrotatedPlacements);
+      
+      // Enhance the definition to preserve the original component type for rendering
+      // Extract base type from original definition ID (e.g., "resistor" from "resistor-100k")
+      const baseType = definition.id.split('-')[0];
+      const enhancedDef = {
+        ...newDef,
+        id: `${baseType}-custom-${newDef.id}`, // Preserve base type in ID for subtype detection
+        name: definition.name, // Keep original name
+        category: definition.category, // Keep original category
+      };
+      
+      // Add definition synchronously
+      const currentDefs = getStore().componentDefinitions;
+      if (!currentDefs.some((d) => d.id === enhancedDef.id)) {
+        addComponentDefinition(enhancedDef);
+      }
+      
+      defIdToUse = enhancedDef.id;
+      targetDef = enhancedDef;
+    }
+
+    // Rebuild component pins with absolute positions on the board
+    // If we created or modified a definition, rotate its pins. Otherwise, use the edited placements directly.
+    const rotatedPinsForPlacement = (needsNewDefinition || pinPositionsChanged)
+      ? getRotatedPinPositions(targetDef.pins, component.rotation)
+      : pinPlacements.map(p => ({ row: p.row, col: p.col }));
+    
+    // Try to preserve netId assignments by matching in board space
+    const oldPinsByNumber = new Map(component.pins.map((p) => [p.number, p]));
+    const oldPinsByPos = new Map(
+      component.pins.map((p) => [`${p.position.row},${p.position.col}`, p])
+    );
+
+    const newPins = rotatedPinsForPlacement.map((rotatedPos, i) => {
+      const pinPlacement = pinPlacements[i];
+      
+      // Calculate absolute position using the adjusted component position
+      const absRow = newComponentPosition.row + rotatedPos.row;
+      const absCol = newComponentPosition.col + rotatedPos.col;
+      
+      // For net assignment matching, find by number first, then by absolute position
+      let oldPin = oldPinsByNumber.get(pinPlacement.number);
+      
+      if (!oldPin) {
+        // Try to match by the absolute position this pin is moving to
+        const posKey = `${absRow},${absCol}`;
+        oldPin = oldPinsByPos.get(posKey);
+      }
+      
       return {
-        number: pDef.number,
+        number: pinPlacement.number,
         netId: oldPin?.netId,
         position: {
-          row: component.position.row + pDef.position.row,
-          col: component.position.col + pDef.position.col,
+          row: absRow,
+          col: absCol,
         },
         extended: oldPin?.extended ?? 0,
       };
     });
 
-    updateComponent(componentId, {
+    // Single edit: full update including pins and definition
+    const updates: Partial<typeof component> = {
       reference,
       value: value || undefined,
-      definitionId: defIdToUse,
+      position: newComponentPosition,
       pins: newPins,
       color: bodyColor || undefined,
-    });
+    };
+    
+    if (needsNewDefinition || pinPositionsChanged) {
+      updates.definitionId = defIdToUse;
+    }
+
+    updateComponent(componentId, updates);
 
     onClose();
   }, [
@@ -304,7 +457,13 @@ export const EditComponentDialog = ({
     value,
     bodyColor,
     componentId,
+    componentIds,
+    components,
     componentDefinitions,
+    isBulkEdit,
+    selectedVariantId,
+    originalMinPos,
+    getStore,
     saveToHistory,
     updateComponent,
     addComponentDefinition,
@@ -332,15 +491,26 @@ export const EditComponentDialog = ({
       />
 
       {/* Dialog */}
-      <div className="relative bg-[#141418] border border-[#2a2a34] rounded-xl shadow-2xl shadow-black/60 w-[620px] max-h-[85vh] flex flex-col overflow-hidden">
+      <div className="relative bg-[#141418] border border-[#2a2a34] rounded-xl shadow-2xl shadow-black/60 w-[800px] max-h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-[#1c1c22]">
           <div>
             <h2 className="text-sm font-bold text-[#ededf0]">
-              Edit Component
+              Edit Component{isBulkEdit ? `s (${componentIds.length})` : ''}
             </h2>
             <p className="text-[10px] text-[#52525b] mt-0.5">
-              {definition.name} — {definition.footprint.type} package
+              {isBulkEdit ? (
+                `Bulk editing ${componentIds.length} components`
+              ) : (
+                <>
+                  {definition.name} — {definition.footprint.type} package
+                  {component.rotation !== 0 && (
+                    <span className="text-[#c8ff2e] ml-2">
+                      ↻ {component.rotation}° (editing in board orientation)
+                    </span>
+                  )}
+                </>
+              )}
             </p>
           </div>
           <button
@@ -361,7 +531,9 @@ export const EditComponentDialog = ({
                 type="text"
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
-                className="bg-[#0f0f12] text-[#ededf0] text-xs px-2.5 py-1.5 rounded-md flex-1 min-w-0 border border-[#222228] focus:border-[#c8ff2e] focus:outline-none transition-colors font-mono"
+                disabled={isBulkEdit}
+                className="bg-[#0f0f12] text-[#ededf0] text-xs px-2.5 py-1.5 rounded-md flex-1 min-w-0 border border-[#222228] focus:border-[#c8ff2e] focus:outline-none transition-colors font-mono disabled:opacity-50 disabled:cursor-not-allowed"
+                title={isBulkEdit ? "Reference cannot be changed in bulk edit" : ""}
               />
             </div>
             <div className="flex items-center gap-2 flex-1">
@@ -378,27 +550,49 @@ export const EditComponentDialog = ({
             </div>
             <div className="flex items-center gap-2">
               <label className="text-[11px] text-[#63637a] shrink-0">
-                Type
+                Variant
               </label>
               <select
-                value={footprintType}
+                value={selectedVariantId}
                 onChange={(e) => {
-                  const t = e.target.value as FootprintTypeOption;
-                  setFootprintType(t);
-                  if (t !== 'Custom') applyPreset(t);
+                  const newDefId = e.target.value;
+                  setSelectedVariantId(newDefId);
+                  const newDef = componentDefinitions.find((d) => d.id === newDefId);
+                  if (newDef) {
+                    setFootprintType(newDef.footprint.type as FootprintTypeOption);
+                    // Update the component definition immediately for single edit
+                    if (!isBulkEdit) {
+                      // Convert current pin placements to unrotated space
+                      const unrotatedPlacements = unrotatePositions(
+                        pinPlacements.map(p => ({ row: p.row, col: p.col })),
+                        component.rotation
+                      );
+                      // Update pin placements to match new definition
+                      const rotatedNewDefPins = getRotatedPinPositions(newDef.pins, component.rotation);
+                      setPinPlacements(rotatedNewDefPins.map((p, i) => ({
+                        row: p.row,
+                        col: p.col,
+                        number: newDef.pins[i].number,
+                        name: newDef.pins[i].name ?? '',
+                      })));
+                    }
+                  }
                 }}
-                className="bg-[#0f0f12] text-[#a6a6b8] text-xs px-2 py-1.5 rounded-md border border-[#222228] focus:border-[#c8ff2e] focus:outline-none transition-colors appearance-none cursor-pointer"
+                className="bg-[#0f0f12] text-[#a6a6b8] text-xs px-2 py-1.5 rounded-md border border-[#222228] focus:border-[#c8ff2e] focus:outline-none transition-colors appearance-none cursor-pointer flex-1"
+                title="Select component visual variant"
               >
-                <option value="Custom">Custom</option>
-                <option value="SIP">SIP</option>
-                <option value="DIP">DIP</option>
-                <option value="Axial">Axial</option>
-                <option value="Radial">Radial</option>
-                <option value="TO92">TO-92</option>
-                <option value="TO220">TO-220</option>
-                <option value="TrimPot">TrimPot</option>
-                <option value="TrimPotTop">TrimPot Top</option>
-                <option value="TactSwitch">Tact Switch</option>
+                {/* Group by footprint type for easier selection */}
+                {definition && (() => {
+                  const currentFpType = definition.footprint.type;
+                  const variants = componentDefinitions.filter(
+                    (d) => d.footprint.type === currentFpType && d.pins.length === definition.pins.length
+                  );
+                  return variants.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ));
+                })()}
               </select>
             </div>
           </div>
@@ -440,7 +634,8 @@ export const EditComponentDialog = ({
           </div>
 
           {/* ─── Pin Editor ──────────────────────────────── */}
-          <div className="border-t border-[#1c1c22] pt-3">
+          {!isBulkEdit && (
+            <div className="border-t border-[#1c1c22] pt-3">
             <div className="flex items-center justify-between mb-2">
               <div className="text-[10px] font-semibold text-[#4a4a5a] uppercase tracking-wider">
                 Pin Editor
@@ -859,6 +1054,22 @@ export const EditComponentDialog = ({
               </div>
             </div>
           </div>
+          )}
+
+          {/* ─── Bulk Edit Info ──────────────────────────────── */}
+          {isBulkEdit && (
+            <div className="border-t border-[#1c1c22] pt-3">
+              <div className="text-[11px] text-[#63637a] space-y-2">
+                <p>Bulk editing {componentIds.length} components of the same type.</p>
+                <p className="text-[10px] text-[#4a4a5a]">
+                  • Variant, value, and color will be applied to all selected components<br />
+                  • Switch to a different visual variant to change all at once<br />
+                  • Pin positions cannot be manually edited in bulk mode<br />
+                  • Edit components individually for custom pin layouts
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

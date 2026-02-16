@@ -35,3 +35,40 @@ export function getRotatedPinPositions(
     }
   });
 }
+
+/**
+ * Reverse a rotation - convert rotated positions back to unrotated definition space.
+ * This is the inverse operation of getRotatedPinPositions.
+ * 
+ * @param positions - Positions in rotated space
+ * @param rotation - The rotation that was applied (will be reversed)
+ */
+export function unrotatePositions(
+  positions: GridPosition[],
+  rotation: 0 | 90 | 180 | 270
+): GridPosition[] {
+  if (rotation === 0) return positions.map((p) => ({ ...p }));
+  if (positions.length === 0) return [];
+
+  const maxRow = Math.max(...positions.map((p) => p.row));
+  const maxCol = Math.max(...positions.map((p) => p.col));
+
+  return positions.map((p) => {
+    const { row, col } = p;
+    switch (rotation) {
+      case 90:
+        // Reverse of (row, col) → (col, maxRow - row)
+        // So (row, col) came from (maxRow - col, row)
+        return { row: maxCol - col, col: row };
+      case 180:
+        // Reverse of (row, col) → (maxRow - row, maxCol - col)
+        return { row: maxRow - row, col: maxCol - col };
+      case 270:
+        // Reverse of (row, col) → (maxCol - col, row)
+        // So (row, col) came from (col, maxCol - row)
+        return { row: col, col: maxRow - row };
+      default:
+        return { row, col };
+    }
+  });
+}

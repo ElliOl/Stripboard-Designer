@@ -165,9 +165,7 @@ export const StripboardCanvas = () => {
   // ─── Context Menu & Edit Dialog ───────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [imageContextMenu, setImageContextMenu] = useState<ImageContextMenuState | null>(null);
-  const [editingComponentId, setEditingComponentId] = useState<string | null>(
-    null
-  );
+  const [editingComponentIds, setEditingComponentIds] = useState<string[]>([]);
   const [croppingImageId, setCroppingImageId] = useState<string | null>(null);
   const rightClickedRef = useRef<string | null>(null);
 
@@ -1041,8 +1039,23 @@ export const StripboardCanvas = () => {
 
   // ─── Context Menu Actions ─────────────────────────────────
   const handleEditComponent = useCallback((id: string) => {
-    setEditingComponentId(id);
-  }, []);
+    // Check if multiple components of the same type are selected
+    const comp = components.find((c) => c.id === id);
+    if (!comp) {
+      setEditingComponentIds([id]);
+      return;
+    }
+    
+    const selectedComps = components.filter((c) => selectedItems.includes(c.id));
+    const sameTypeComps = selectedComps.filter((c) => c.definitionId === comp.definitionId);
+    
+    // If multiple components of same type are selected, edit them all
+    if (sameTypeComps.length > 1) {
+      setEditingComponentIds(sameTypeComps.map((c) => c.id));
+    } else {
+      setEditingComponentIds([id]);
+    }
+  }, [components, selectedItems]);
 
   const handleRotateComponent = useCallback(
     (id: string) => {
@@ -1242,7 +1255,30 @@ export const StripboardCanvas = () => {
           {layerVisibility.components &&
             visibleComponents.map((c: ComponentType) => {
               const def = componentDefinitions.find(d => d.id === c.definitionId);
-              if (!def) return null;
+              if (!def) {
+                // Definition not found - this shouldn't happen but render pins anyway to show something
+                console.warn(`Component ${c.reference} (${c.id}) has invalid definitionId: ${c.definitionId}`);
+                // Render just the pins as circles to show the component exists
+                return (
+                  <Group
+                    key={c.id}
+                    x={c.position.col * 25.4}
+                    y={c.position.row * 25.4}
+                  >
+                    {c.pins.map((pin, i) => (
+                      <Circle
+                        key={`${c.id}-pin-${i}`}
+                        x={(pin.position.col - c.position.col) * 25.4}
+                        y={(pin.position.row - c.position.row) * 25.4}
+                        radius={4.5}
+                        fill="#ff4444"
+                        stroke="#ff0000"
+                        strokeWidth={2}
+                      />
+                    ))}
+                  </Group>
+                );
+              }
               const compFilterActive = componentSearchFilter.trim().length > 0;
               const compFilterMatch = !compFilterActive ||
                 c.reference.toLowerCase().includes(componentSearchFilter.toLowerCase()) ||
@@ -1500,10 +1536,10 @@ export const StripboardCanvas = () => {
       )}
 
       {/* ── Edit Component Dialog ────────────────────────── */}
-      {editingComponentId && (
+      {editingComponentIds.length > 0 && (
         <EditComponentDialog
-          componentId={editingComponentId}
-          onClose={() => setEditingComponentId(null)}
+          componentIds={editingComponentIds}
+          onClose={() => setEditingComponentIds([])}
         />
       )}
 
