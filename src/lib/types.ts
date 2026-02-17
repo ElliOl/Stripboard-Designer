@@ -193,6 +193,21 @@ export type ProjectData = {
   nets: Net[];
   stripColor?: string; // Optional for backward compatibility
   customDefinitions?: ComponentDefinition[]; // Custom component definitions (generic/custom)
+  importReport?: ImportReport | null; // Preserved import summary from last netlist import
+};
+
+// ─── Netlist Re-Import Options ───────────────────────────
+
+export type NetlistImportMode = 'replace' | 'update';
+
+export type NetlistImportOptions = {
+  mode: NetlistImportMode;
+  /** Which aspects to update (only relevant in 'update' mode) */
+  updateComponents: boolean; // Add new / remove missing components
+  updateValues: boolean; // Update component values
+  updateFootprints: boolean; // Update component footprints (definitions)
+  updateNets: boolean; // Update net assignments on pins
+  removeUnusedNets: boolean; // Remove nets no longer in netlist
 };
 
 export type NetHighlightMode = 'full' | 'connections';

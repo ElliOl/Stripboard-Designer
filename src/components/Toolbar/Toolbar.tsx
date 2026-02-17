@@ -14,9 +14,10 @@ import {
   Minus,
 } from 'lucide-react';
 import { useStripboardStore } from '@/store/stripboard';
-import { parseKiCadNetlist } from '@/lib/netlist-parser';
-import type { ToolType } from '@/lib/types';
+import { parseKiCadNetlist, isVirtualRef, type ParsedNetlist } from '@/lib/netlist-parser';
+import type { ToolType, NetlistImportOptions } from '@/lib/types';
 import { SettingsDialog } from '@/components/SettingsDialog';
+import { NetlistImportDialog } from '@/components/NetlistImportDialog';
 
 const tools: Array<{
   type: ToolType;
@@ -40,13 +41,20 @@ export const Toolbar = () => {
     toggleRatsNest,
     exportProject,
     importProject,
-    importNetlist,
+    importNetlistWithOptions,
+    components,
     layerVisibility,
     toggleLayer,
   } = useStripboardStore();
 
   // ─── Settings Dialog State ────────────────────────────────
   const [showSettings, setShowSettings] = useState(false);
+
+  // ─── Netlist Import Dialog State ──────────────────────────
+  const [netlistImportPending, setNetlistImportPending] = useState<{
+    parsed: ParsedNetlist;
+    fileName: string;
+  } | null>(null);
 
   // ─── Drag State ───────────────────────────────────────────
   const [pos, setPos] = useState({ x: 16, y: 16 });
@@ -151,13 +159,8 @@ export const Toolbar = () => {
         try {
           const text = ev.target?.result as string;
           const parsed = parseKiCadNetlist(text);
-          const report = importNetlist(parsed);
-          console.log(
-            `Imported ${report.importedComponents} components, ${report.importedNets} nets` +
-            (report.skippedComponents.length > 0
-              ? ` (${report.skippedComponents.length} unsupported)`
-              : '')
-          );
+          // Show import options dialog instead of importing immediately
+          setNetlistImportPending({ parsed, fileName: file.name });
         } catch (err) {
           console.error('Failed to parse netlist:', err);
           alert(
@@ -168,6 +171,19 @@ export const Toolbar = () => {
       reader.readAsText(file);
     };
     input.click();
+  };
+
+  const handleNetlistImportConfirm = (options: NetlistImportOptions) => {
+    if (!netlistImportPending) return;
+    const { parsed } = netlistImportPending;
+    const report = importNetlistWithOptions(parsed, options);
+    console.log(
+      `Imported ${report.importedComponents} components, ${report.importedNets} nets` +
+      (report.skippedComponents.length > 0
+        ? ` (${report.skippedComponents.length} unsupported)`
+        : '')
+    );
+    setNetlistImportPending(null);
   };
 
   const hasSelection = selectedItems.length > 0;
@@ -286,6 +302,25 @@ export const Toolbar = () => {
       {/* ─── Settings Dialog ───────────────────────────────── */}
       {showSettings && (
         <SettingsDialog onClose={() => setShowSettings(false)} />
+      )}
+
+      {/* ─── Netlist Import Dialog ───────────────────────────── */}
+      {netlistImportPending && (
+        <NetlistImportDialog
+          fileName={netlistImportPending.fileName}
+          hasExistingBoard={components.length > 0}
+          parsedComponentCount={
+            netlistImportPending.parsed.components.filter(
+              (c) => !isVirtualRef(c.ref)
+            ).length
+          }
+          parsedNetCount={
+            netlistImportPending.parsed.nets.filter((n) => n.nodes.length > 0)
+              .length
+          }
+          onConfirm={handleNetlistImportConfirm}
+          onCancel={() => setNetlistImportPending(null)}
+        />
       )}
     </div>
   );

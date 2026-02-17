@@ -475,22 +475,31 @@ function UnconnectedNetsPanel() {
 // ─── Import Report (accordion, not dismissable) ─────────────────
 
 function ImportReportPanel() {
-  const { importReport: report, reorganizeByConnectivity } = useStripboardStore();
+  const {
+    importReport: report,
+    reorganizeByConnectivity,
+    components: boardComponents,
+    nets: boardNets,
+  } = useStripboardStore();
   const [isExpanded, setIsExpanded] = useState(true);
   const [showSkipped, setShowSkipped] = useState(true);
   const [showVirtual, setShowVirtual] = useState(false);
   const [showIncomplete, setShowIncomplete] = useState(true);
 
-  if (!report) return null;
+  // Show the grouping button whenever the board has enough components & nets,
+  // regardless of whether a netlist was imported
+  const canGroup = boardComponents.length > 1 && boardNets.length > 0;
 
-  const hasSkipped = report.skippedComponents.length > 0;
-  const hasVirtual = report.virtualComponents.length > 0;
-  const hasIncomplete = (report.incompleteNets?.length ?? 0) > 0;
+  if (!report && !canGroup) return null;
+
+  const hasSkipped = report ? report.skippedComponents.length > 0 : false;
+  const hasVirtual = report ? report.virtualComponents.length > 0 : false;
+  const hasIncomplete = report ? (report.incompleteNets?.length ?? 0) > 0 : false;
 
   return (
     <div className="border-b border-[#1c1c22]">
       <AccordionHeader
-        label="Import Summary"
+        label={report ? 'Import Summary' : 'Netlist Tools'}
         isExpanded={isExpanded}
         onToggle={() => setIsExpanded(v => !v)}
         icon={CheckCircle}
@@ -500,24 +509,26 @@ function ImportReportPanel() {
 
       {isExpanded && (
         <div className="px-3 pb-2">
-          {/* Counts */}
-          <div className="py-1.5 space-y-1">
-            <div className="flex items-center gap-1.5 text-[11px]">
-              <CheckCircle size={12} className="text-emerald-500 shrink-0" />
-              <span className="text-[#a6a6b8]">
-                {report.importedComponents} component{report.importedComponents !== 1 ? 's' : ''} placed
-              </span>
+          {/* Counts (only when import report exists) */}
+          {report && (
+            <div className="py-1.5 space-y-1">
+              <div className="flex items-center gap-1.5 text-[11px]">
+                <CheckCircle size={12} className="text-emerald-500 shrink-0" />
+                <span className="text-[#a6a6b8]">
+                  {report.importedComponents} component{report.importedComponents !== 1 ? 's' : ''} placed
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px]">
+                <CheckCircle size={12} className="text-emerald-500 shrink-0" />
+                <span className="text-[#a6a6b8]">
+                  {report.importedNets} net{report.importedNets !== 1 ? 's' : ''} created
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 text-[11px]">
-              <CheckCircle size={12} className="text-emerald-500 shrink-0" />
-              <span className="text-[#a6a6b8]">
-                {report.importedNets} net{report.importedNets !== 1 ? 's' : ''} created
-              </span>
-            </div>
-          </div>
+          )}
 
-          {/* Cluster by connectivity */}
-          {report.importedComponents > 1 && report.importedNets > 0 && (
+          {/* Cluster by connectivity — uses actual board state */}
+          {canGroup && (
             <div className="py-1.5">
               <button
                 onClick={reorganizeByConnectivity}
@@ -537,130 +548,135 @@ function ImportReportPanel() {
             </div>
           )}
 
-          {/* Skipped components */}
-          {hasSkipped && (
-            <div className="pb-1">
-              <button
-                onClick={() => setShowSkipped((v) => !v)}
-                className="flex items-center gap-1 text-[11px] font-medium text-amber-400/90 w-full py-1 hover:text-amber-300 transition-colors"
-              >
-                {showSkipped ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                <AlertTriangle size={11} className="shrink-0" />
-                <span>
-                  {report.skippedComponents.length} unsupported component{report.skippedComponents.length !== 1 ? 's' : ''}
-                </span>
-              </button>
-              {showSkipped && (
-                <div className="ml-1 space-y-0.5 pb-1">
-                  {report.skippedComponents.map((sc, i) => (
-                    <div
-                      key={`${sc.ref}-${i}`}
-                      className="flex flex-col gap-0.5 py-1 px-2 bg-[#19191d] rounded-md border border-[#222228]"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-mono font-bold text-amber-300/80">
-                          {sc.ref}
-                        </span>
-                        <span className="text-[10px] text-[#52525b]">
-                          {sc.value}
-                        </span>
-                      </div>
-                      <div className="text-[9px] text-[#52525b] truncate" title={sc.footprint}>
-                        {sc.footprint || '(no footprint)'}
-                      </div>
-                      <div className="text-[9px] text-amber-400/60">
-                        {sc.reason}
-                      </div>
-                    </div>
-                  ))}
-                  <div className="text-[9px] text-[#38384a] italic px-1 pt-1 leading-relaxed">
-                    Nets referencing these components were still imported.
-                    Assign their connections manually via wires and pin nets.
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Incomplete nets (single connection) */}
-          {hasIncomplete && (
-            <div className="pb-1">
-              <button
-                onClick={() => setShowIncomplete((v) => !v)}
-                className="flex items-center gap-1 text-[11px] font-medium text-orange-400/90 w-full py-1 hover:text-orange-300 transition-colors"
-              >
-                {showIncomplete ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                <AlertTriangle size={11} className="shrink-0" />
-                <span>
-                  {report.incompleteNets!.length} incomplete net{report.incompleteNets!.length !== 1 ? 's' : ''}
-                </span>
-              </button>
-              {showIncomplete && (
-                <div className="ml-1 space-y-0.5 pb-1">
-                  {report.incompleteNets!.map((inc, i) => (
-                    <div
-                      key={`${inc.netCode}-${i}`}
-                      className="flex flex-col gap-0.5 py-1 px-2 bg-[#19191d] rounded-md border border-[#222228]"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-mono font-bold text-orange-300/80">
-                          {inc.netName}
-                        </span>
-                        <span className="text-[10px] text-[#52525b]">
-                          {inc.nodeCount} connection{inc.nodeCount !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                      <div className="text-[9px] text-orange-400/60">
-                        This net has only one connection
+          {/* Report-specific details (only when import report exists) */}
+          {report && (
+            <>
+              {/* Skipped components */}
+              {hasSkipped && (
+                <div className="pb-1">
+                  <button
+                    onClick={() => setShowSkipped((v) => !v)}
+                    className="flex items-center gap-1 text-[11px] font-medium text-amber-400/90 w-full py-1 hover:text-amber-300 transition-colors"
+                  >
+                    {showSkipped ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    <AlertTriangle size={11} className="shrink-0" />
+                    <span>
+                      {report.skippedComponents.length} unsupported component{report.skippedComponents.length !== 1 ? 's' : ''}
+                    </span>
+                  </button>
+                  {showSkipped && (
+                    <div className="ml-1 space-y-0.5 pb-1">
+                      {report.skippedComponents.map((sc, i) => (
+                        <div
+                          key={`${sc.ref}-${i}`}
+                          className="flex flex-col gap-0.5 py-1 px-2 bg-[#19191d] rounded-md border border-[#222228]"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-mono font-bold text-amber-300/80">
+                              {sc.ref}
+                            </span>
+                            <span className="text-[10px] text-[#52525b]">
+                              {sc.value}
+                            </span>
+                          </div>
+                          <div className="text-[9px] text-[#52525b] truncate" title={sc.footprint}>
+                            {sc.footprint || '(no footprint)'}
+                          </div>
+                          <div className="text-[9px] text-amber-400/60">
+                            {sc.reason}
+                          </div>
+                        </div>
+                      ))}
+                      <div className="text-[9px] text-[#38384a] italic px-1 pt-1 leading-relaxed">
+                        Nets referencing these components were still imported.
+                        Assign their connections manually via wires and pin nets.
                       </div>
                     </div>
-                  ))}
-                  <div className="text-[9px] text-[#38384a] italic px-1 pt-1 leading-relaxed">
-                    Nets should normally have at least 2 connections. This may indicate
-                    a component with missing pins or an incomplete circuit.
-                  </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Virtual / power symbols */}
-          {hasVirtual && (
-            <div className="pb-1">
-              <button
-                onClick={() => setShowVirtual((v) => !v)}
-                className="flex items-center gap-1 text-[11px] font-medium text-[#63637a] w-full py-1 hover:text-[#a6a6b8] transition-colors"
-              >
-                {showVirtual ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                <Zap size={11} className="shrink-0" />
-                <span>
-                  {report.virtualComponents.length} power / virtual symbol{report.virtualComponents.length !== 1 ? 's' : ''}
-                </span>
-              </button>
-              {showVirtual && (
-                <div className="ml-1 space-y-0.5 pb-1">
-                  {report.virtualComponents.map((vc, i) => (
-                    <div
-                      key={`${vc.ref}-${i}`}
-                      className="flex items-center gap-2 py-0.5 px-2 text-[10px]"
-                    >
-                      <span className="font-mono text-[#63637a]">{vc.ref}</span>
-                      <span className="text-[#4a4a5a]">{vc.value}</span>
+              {/* Incomplete nets (single connection) */}
+              {hasIncomplete && (
+                <div className="pb-1">
+                  <button
+                    onClick={() => setShowIncomplete((v) => !v)}
+                    className="flex items-center gap-1 text-[11px] font-medium text-orange-400/90 w-full py-1 hover:text-orange-300 transition-colors"
+                  >
+                    {showIncomplete ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    <AlertTriangle size={11} className="shrink-0" />
+                    <span>
+                      {report.incompleteNets!.length} incomplete net{report.incompleteNets!.length !== 1 ? 's' : ''}
+                    </span>
+                  </button>
+                  {showIncomplete && (
+                    <div className="ml-1 space-y-0.5 pb-1">
+                      {report.incompleteNets!.map((inc, i) => (
+                        <div
+                          key={`${inc.netCode}-${i}`}
+                          className="flex flex-col gap-0.5 py-1 px-2 bg-[#19191d] rounded-md border border-[#222228]"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-mono font-bold text-orange-300/80">
+                              {inc.netName}
+                            </span>
+                            <span className="text-[10px] text-[#52525b]">
+                              {inc.nodeCount} connection{inc.nodeCount !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <div className="text-[9px] text-orange-400/60">
+                            This net has only one connection
+                          </div>
+                        </div>
+                      ))}
+                      <div className="text-[9px] text-[#38384a] italic px-1 pt-1 leading-relaxed">
+                        Nets should normally have at least 2 connections. This may indicate
+                        a component with missing pins or an incomplete circuit.
+                      </div>
                     </div>
-                  ))}
-                  <div className="text-[9px] text-[#38384a] italic px-1 pt-1 leading-relaxed">
-                    Power symbols are available as assignable nets
-                    (e.g. +12V, GND). Use the Net Manager below.
-                  </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          {!hasSkipped && !hasVirtual && !hasIncomplete && (
-            <div className="pb-1 text-[10px] text-emerald-500/60">
-              All components imported successfully.
-            </div>
+              {/* Virtual / power symbols */}
+              {hasVirtual && (
+                <div className="pb-1">
+                  <button
+                    onClick={() => setShowVirtual((v) => !v)}
+                    className="flex items-center gap-1 text-[11px] font-medium text-[#63637a] w-full py-1 hover:text-[#a6a6b8] transition-colors"
+                  >
+                    {showVirtual ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    <Zap size={11} className="shrink-0" />
+                    <span>
+                      {report.virtualComponents.length} power / virtual symbol{report.virtualComponents.length !== 1 ? 's' : ''}
+                    </span>
+                  </button>
+                  {showVirtual && (
+                    <div className="ml-1 space-y-0.5 pb-1">
+                      {report.virtualComponents.map((vc, i) => (
+                        <div
+                          key={`${vc.ref}-${i}`}
+                          className="flex items-center gap-2 py-0.5 px-2 text-[10px]"
+                        >
+                          <span className="font-mono text-[#63637a]">{vc.ref}</span>
+                          <span className="text-[#4a4a5a]">{vc.value}</span>
+                        </div>
+                      ))}
+                      <div className="text-[9px] text-[#38384a] italic px-1 pt-1 leading-relaxed">
+                        Power symbols are available as assignable nets
+                        (e.g. +12V, GND). Use the Net Manager below.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!hasSkipped && !hasVirtual && !hasIncomplete && (
+                <div className="pb-1 text-[10px] text-emerald-500/60">
+                  All components imported successfully.
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

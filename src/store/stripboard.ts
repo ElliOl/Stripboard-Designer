@@ -19,6 +19,7 @@ import type {
   RatsnestColorMode,
   ReferenceImageState,
   PCB,
+  NetlistImportOptions,
 } from '@/lib/types';
 import { getRotatedPinPositions, unrotatePositions } from '@/lib/rotation';
 import {
@@ -211,6 +212,7 @@ interface StripboardStore extends StripboardState {
 
   // Netlist
   importNetlist: (parsed: ParsedNetlist) => ImportReport;
+  importNetlistWithOptions: (parsed: ParsedNetlist, options: NetlistImportOptions) => ImportReport;
   dismissImportReport: () => void;
   reorganizeByConnectivity: () => void;
 
@@ -1293,6 +1295,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       nets: state.nets,
       stripColor: state.stripColor,
       customDefinitions: customDefinitions.length > 0 ? customDefinitions : undefined,
+      importReport: state.importReport ?? undefined,
     };
   },
 
@@ -1359,7 +1362,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       stripColor: data.stripColor ?? '#4a4a4a', // Default to dark grey if not specified
       componentDefinitions: mergedDefinitions,
       selectedItems: [],
-      importReport: null,
+      importReport: data.importReport ?? null, // Restore saved import report
       past: [],
       future: [],
     });
@@ -1554,6 +1557,319 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
         ...state.strips.filter(s => s.pcbId) // Keep all additional PCB strips
       ],
       wires: [],
+      selectedItems: [],
+      importReport: report,
+      netGroups: [],
+      selectedNetIds: [],
+      netSearchFilter: '',
+    });
+
+    return report;
+  },
+
+  importNetlistWithOptions: (parsed, options) => {
+    // 'replace' mode delegates to the existing full-replace import
+    if (options.mode === 'replace') {
+      return get().importNetlist(parsed);
+    }
+
+    // ── 'update' mode: selectively update the existing board ──
+    const state = get();
+    const defs = [...state.componentDefinitions];
+
+    const emptyReport: ImportReport = {
+      importedComponents: 0,
+      importedNets: 0,
+      skippedComponents: [],
+      virtualComponents: [],
+    };
+
+    if (defs.length === 0) {
+      console.error('Component library not loaded yet');
+      return emptyReport;
+    }
+
+    // Collect pin numbers per ref from netlist
+    const pinsByRef = new Map<string, Set<string>>();
+    for (const net of parsed.nets) {
+      for (const node of net.nodes) {
+        if (!pinsByRef.has(node.ref)) pinsByRef.set(node.ref, new Set());
+        pinsByRef.get(node.ref)!.add(node.pin);
+      }
+    }
+
+    // Index existing components by reference
+    const existingByRef = new Map<string, Component>();
+    for (const comp of state.components) {
+      existingByRef.set(comp.reference, comp);
+    }
+
+    // Index existing nets by id
+    const existingNetsById = new Map<string, Net>();
+    for (const net of state.nets) {
+      existingNetsById.set(net.id, net);
+    }
+
+    // Track stats
+    const skippedComponents: SkippedComponent[] = [];
+    const virtualComponents: { ref: string; value: string }[] = [];
+    let addedCount = 0;
+
+    // Build the new nets list from the parsed netlist
+    const newNets: Net[] = parsed.nets
+      .filter((n) => n.nodes.length > 0)
+      .map((n, i) => {
+        const netId = `net-${n.code}`;
+        // Preserve existing net color if available
+        const existing = existingNetsById.get(netId);
+        return {
+          id: netId,
+          name: n.name || `Net${n.code}`,
+          color: existing?.color ?? NET_COLORS[i % NET_COLORS.length],
+          visible: existing?.visible ?? true,
+          imported: true,
+        };
+      });
+
+    // Detect incomplete nets
+    const incompleteNets: Array<{ netName: string; netCode: string; nodeCount: number }> = [];
+    for (const net of parsed.nets) {
+      if (net.name.startsWith('unconnected-')) continue;
+      const validNodes = net.nodes.filter(node => !isVirtualRef(node.ref));
+      if (validNodes.length === 1) {
+        incompleteNets.push({ netName: net.name, netCode: net.code, nodeCount: validNodes.length });
+      }
+    }
+
+    // Collect all parsed refs (excluding virtual)
+    const parsedRefs = new Set<string>();
+    for (const pc of parsed.components) {
+      if (isVirtualRef(pc.ref)) {
+        virtualComponents.push({ ref: pc.ref, value: pc.value });
+      } else {
+        parsedRefs.add(pc.ref);
+      }
+    }
+
+    // ── Process updates to existing components ──
+    let updatedComponents = [...state.components];
+
+    for (const pc of parsed.components) {
+      if (isVirtualRef(pc.ref)) continue;
+
+      const existing = existingByRef.get(pc.ref);
+      if (!existing) continue; // Will be handled in "add new" step
+
+      let changed = false;
+      const updates: Partial<Component> = {};
+
+      // Update value
+      if (options.updateValues && pc.value !== (existing.value ?? '')) {
+        updates.value = pc.value || undefined;
+        changed = true;
+      }
+
+      // Update footprint (definition)
+      if (options.updateFootprints) {
+        let defId = mapFootprintToDefinition(pc.footprint, pc.ref, pc.value);
+        let def = defId ? defs.find((d) => d.id === defId) : null;
+        const pinSet = pinsByRef.get(pc.ref);
+        const requiredPinCount = pinSet ? pinSet.size : 0;
+        const hasEnoughPins = def && def.pins.length >= requiredPinCount;
+
+        if (!defId || !def || !hasEnoughPins) {
+          const pinNumbers = pinSet && pinSet.size > 0
+            ? [...pinSet].sort((a, b) => {
+                const aNum = parseInt(a, 10);
+                const bNum = parseInt(b, 10);
+                if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+                return a.localeCompare(b);
+              })
+            : ['1', '2'];
+          const fp = pc.footprint.toLowerCase();
+          const isHeader = fp.includes('header') || fp.includes('connector') ||
+                          fp.includes('terminal') || pc.ref.startsWith('J') ||
+                          pc.ref.startsWith('P');
+          const genericDef = createGenericDefinition(pinNumbers, isHeader ? 'SIP' : undefined);
+          if (!defs.find((d) => d.id === genericDef.id)) {
+            defs.push(genericDef);
+          }
+          defId = genericDef.id;
+          def = defs.find((d) => d.id === genericDef.id)!;
+        }
+
+        if (defId !== existing.definitionId) {
+          updates.definitionId = defId;
+          // Re-derive pins for the new definition, keeping the same position & rotation
+          const rotatedPinPositions = getRotatedPinPositions(def!.pins, existing.rotation);
+          updates.pins = def!.pins.map((pDef, idx) => {
+            const netEntry = parsed.nets.find((n) =>
+              n.nodes.some((node) => node.ref === pc.ref && node.pin === pDef.number)
+            );
+            const rotatedPos = rotatedPinPositions[idx];
+            return {
+              number: pDef.number,
+              netId: netEntry ? `net-${netEntry.code}` : undefined,
+              position: {
+                row: existing.position.row + rotatedPos.row,
+                col: existing.position.col + rotatedPos.col,
+              },
+              extended: 0,
+            };
+          });
+          changed = true;
+        }
+      }
+
+      // Update net assignments on pins (without changing footprint)
+      if (options.updateNets && !updates.pins) {
+        const def = defs.find((d) => d.id === existing.definitionId);
+        if (def) {
+          const updatedPins = existing.pins.map((pin) => {
+            const netEntry = parsed.nets.find((n) =>
+              n.nodes.some((node) => node.ref === pc.ref && node.pin === pin.number)
+            );
+            const newNetId = netEntry ? `net-${netEntry.code}` : undefined;
+            if (newNetId !== pin.netId) {
+              changed = true;
+              return { ...pin, netId: newNetId };
+            }
+            return pin;
+          });
+          if (changed) updates.pins = updatedPins;
+        }
+      }
+
+      if (changed) {
+        updatedComponents = updatedComponents.map((c) =>
+          c.id === existing.id ? { ...c, ...updates } : c
+        );
+      }
+    }
+
+    // ── Add new components (refs in netlist but not on board) ──
+    if (options.updateComponents) {
+      let curRow = 2;
+      let curCol = 2;
+      let maxH = 0;
+
+      // Find a free area below existing components
+      for (const comp of updatedComponents) {
+        const def = defs.find((d) => d.id === comp.definitionId);
+        if (def) {
+          const rotatedPinPositions = getRotatedPinPositions(def.pins, comp.rotation);
+          const compBottom = comp.position.row + Math.max(...rotatedPinPositions.map((p) => p.row)) + 1;
+          curRow = Math.max(curRow, compBottom + 1);
+        }
+      }
+
+      for (const pc of parsed.components) {
+        if (isVirtualRef(pc.ref)) continue;
+        if (existingByRef.has(pc.ref)) continue; // Already on board
+
+        let defId = mapFootprintToDefinition(pc.footprint, pc.ref, pc.value);
+        let def = defId ? defs.find((d) => d.id === defId) : null;
+        const pinSet = pinsByRef.get(pc.ref);
+        const requiredPinCount = pinSet ? pinSet.size : 0;
+        const hasEnoughPins = def && def.pins.length >= requiredPinCount;
+
+        if (!defId || !def || !hasEnoughPins) {
+          const pinNumbers = pinSet && pinSet.size > 0
+            ? [...pinSet].sort((a, b) => {
+                const aNum = parseInt(a, 10);
+                const bNum = parseInt(b, 10);
+                if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
+                return a.localeCompare(b);
+              })
+            : ['1', '2'];
+          const fp = pc.footprint.toLowerCase();
+          const isHeader = fp.includes('header') || fp.includes('connector') ||
+                          fp.includes('terminal') || pc.ref.startsWith('J') ||
+                          pc.ref.startsWith('P');
+          const genericDef = createGenericDefinition(pinNumbers, isHeader ? 'SIP' : undefined);
+          if (!defs.find((d) => d.id === genericDef.id)) {
+            defs.push(genericDef);
+          }
+          defId = genericDef.id;
+          def = defs.find((d) => d.id === genericDef.id)!;
+        }
+
+        const rotation = getDefaultRotation(def);
+        const rotatedPinPositions = getRotatedPinPositions(def.pins, rotation);
+        const rotatedWidth = Math.max(...rotatedPinPositions.map((p) => p.col)) + 1;
+        const rotatedHeight = Math.max(...rotatedPinPositions.map((p) => p.row)) + 1;
+
+        if (curCol + rotatedWidth > state.cols - 2) {
+          curRow += maxH + 1;
+          curCol = 2;
+          maxH = 0;
+        }
+
+        const pos: GridPosition = { row: curRow, col: curCol };
+        const pins: ComponentPin[] = def.pins.map((pDef, idx) => {
+          const netEntry = parsed.nets.find((n) =>
+            n.nodes.some((node) => node.ref === pc.ref && node.pin === pDef.number)
+          );
+          const rotatedPos = rotatedPinPositions[idx];
+          return {
+            number: pDef.number,
+            netId: netEntry ? `net-${netEntry.code}` : undefined,
+            position: { row: pos.row + rotatedPos.row, col: pos.col + rotatedPos.col },
+            extended: 0,
+          };
+        });
+
+        updatedComponents.push({
+          id: `comp-${Date.now()}-${pc.ref}`,
+          reference: pc.ref,
+          value: pc.value || undefined,
+          definitionId: defId,
+          position: pos,
+          rotation,
+          pins,
+        });
+
+        addedCount++;
+        curCol += rotatedWidth + 1;
+        maxH = Math.max(maxH, rotatedHeight);
+      }
+
+      // Remove components that are no longer in the netlist
+      updatedComponents = updatedComponents.filter((c) => parsedRefs.has(c.reference));
+    }
+
+    // ── Determine final nets ──
+    let finalNets: Net[];
+    if (options.updateNets) {
+      if (options.removeUnusedNets) {
+        // Only keep nets from the new netlist + manually created (non-imported) nets
+        const manualNets = state.nets.filter((n) => !n.imported);
+        finalNets = [...newNets, ...manualNets];
+      } else {
+        // Keep all existing nets, update/add from netlist
+        const merged = new Map<string, Net>();
+        for (const n of state.nets) merged.set(n.id, n);
+        for (const n of newNets) merged.set(n.id, n);
+        finalNets = Array.from(merged.values());
+      }
+    } else {
+      finalNets = state.nets;
+    }
+
+    const report: ImportReport = {
+      importedComponents: options.updateComponents ? addedCount : 0,
+      importedNets: options.updateNets ? newNets.length : 0,
+      skippedComponents,
+      virtualComponents,
+      incompleteNets: incompleteNets.length > 0 ? incompleteNets : undefined,
+    };
+
+    state.saveToHistory();
+
+    set({
+      components: updatedComponents,
+      componentDefinitions: defs,
+      nets: finalNets,
       selectedItems: [],
       importReport: report,
       netGroups: [],
