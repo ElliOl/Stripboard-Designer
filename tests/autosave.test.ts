@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStripboardStore } from '@/store/stripboard';
-import { AUTOSAVE_KEY, clearAutosave, restoreAutosave, saveAutosave, startAutosave } from '@/lib/autosave';
+import { AUTOSAVE_KEY, BACKUP_KEY, clearAutosave, noteCrash, restoreAutosave, saveAutosave, startAutosave } from '@/lib/autosave';
 
 function installStorage(opts: { maxLength?: number } = {}) {
   const map = new Map<string, string>();
@@ -96,5 +96,44 @@ describe('autosave', () => {
     expect(JSON.parse(map.get(AUTOSAVE_KEY)!).stripColor).toBe('#123456');
     stop();
     vi.unstubAllGlobals();
+  });
+
+  it('rewrites a repaired autosave and keeps the original when items were dropped', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const map = installStorage();
+    const raw = JSON.stringify({
+      board: { rows: 8, cols: 12 },
+      components: [
+        { id: 'c1', reference: 'R1', definitionId: 'resistor', position: { row: 2, col: 2 }, rotation: 0,
+          pins: [{ number: '1', position: { row: 1, col: 1 }, netId: { a: 1 } }] },
+        { id: 'bad' },
+      ],
+    });
+    map.set(AUTOSAVE_KEY, raw);
+    expect(restoreAutosave()).toBe(true);
+    const saved = JSON.parse(map.get(AUTOSAVE_KEY)!);
+    expect(saved.components).toHaveLength(1);
+    expect(saved.components[0].pins[0].extended).toBe(0);
+    expect(saved.components[0].pins[0].netId).toBeUndefined();
+    expect(map.get(BACKUP_KEY)).toBe(raw);
+  });
+
+  it('sets the autosave aside after a crash and starts empty next time', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const map = installStorage();
+    useStripboardStore.setState({ wires: [{ id: 'w1', netId: 'n', points: [{ row: 0, col: 0 }] }] });
+    saveAutosave();
+    const saved = map.get(AUTOSAVE_KEY)!;
+    noteCrash();
+    expect(map.has(AUTOSAVE_KEY)).toBe(false);
+    expect(map.get(BACKUP_KEY)).toBe(saved);
+    // the crashed state must not be saved over it
+    useStripboardStore.setState({ wires: [] });
+    saveAutosave();
+    expect(map.has(AUTOSAVE_KEY)).toBe(false);
+    expect(map.get(BACKUP_KEY)).toBe(saved);
+    useStripboardStore.getState().reset();
+    expect(restoreAutosave()).toBe(false);
+    expect(useStripboardStore.getState().wires).toHaveLength(0);
   });
 });

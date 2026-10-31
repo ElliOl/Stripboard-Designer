@@ -8,6 +8,9 @@ export const BACKUP_KEY = 'stripboard-designer:autosave-backup';
 const RESTORING_KEY = 'stripboard-designer:restoring';
 const DEBOUNCE_MS = 1000;
 
+/** Set once the UI has crashed in this page; stops autosaving. */
+let crashed = false;
+
 function writeProject(withImages: boolean): boolean {
   const project = useStripboardStore.getState().exportProject();
   const data = withImages ? project : { ...project, referenceImages: undefined };
@@ -17,6 +20,8 @@ function writeProject(withImages: boolean): boolean {
 
 /** Save the current project now. Retries without reference images if storage is full. */
 export function saveAutosave(): void {
+  // After a UI crash the live state is suspect: never write it over the saved project
+  if (crashed) return;
   try {
     writeProject(true);
     return;
@@ -55,11 +60,24 @@ function sessionSet(key: string, value: string | null): void {
   }
 }
 
-let crashed = false;
 
-/** Record that the UI crashed, so the restore is not treated as successful. */
+/**
+ * Record that the UI crashed (any crash the ErrorBoundary catches). The stored
+ * autosave is set aside under the backup key straight away, in localStorage so
+ * it holds across reloads and other tabs, and autosaving stops so the crashed
+ * state cannot overwrite it. The next start therefore opens empty.
+ */
 export function noteCrash(): void {
   crashed = true;
+  try {
+    const raw = localStorage.getItem(AUTOSAVE_KEY);
+    if (raw) {
+      localStorage.setItem(BACKUP_KEY, raw);
+      localStorage.removeItem(AUTOSAVE_KEY);
+    }
+  } catch (err) {
+    console.warn('Could not set the autosave aside after a crash', err);
+  }
 }
 
 /** Call once the restored board has rendered without crashing. */
@@ -128,6 +146,11 @@ export function restoreAutosave(): boolean {
     }
     sessionSet(RESTORING_KEY, '1');
     useStripboardStore.getState().importProject(result.project);
+    if (result.dropped > 0 || result.fixed > 0) {
+      // Keep the original if anything was lost, then store the repaired project
+      if (result.dropped > 0) localStorage.setItem(BACKUP_KEY, raw);
+      saveAutosave();
+    }
     return true;
   } catch (err) {
     console.warn('Could not restore autosave', err);

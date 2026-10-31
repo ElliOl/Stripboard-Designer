@@ -20,6 +20,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   componentDidCatch(error: Error, info: ErrorInfo) {
     noteCrash();
     console.error('Unhandled UI error:', error, info.componentStack);
+    // Re-render so "Download autosave" appears now the autosave has been set aside
+    this.forceUpdate();
   }
 
   private download(text: string, name: string) {
