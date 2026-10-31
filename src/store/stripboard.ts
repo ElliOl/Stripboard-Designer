@@ -107,6 +107,9 @@ const getSnapshot = (state: StripboardState): HistoryEntry => ({
   netGroups: JSON.parse(JSON.stringify(state.netGroups)),
   // Images are replaced, never mutated, by the store actions, so share them
   referenceImages: [...state.referenceImages],
+  // Definitions are immutable objects, so a shallow copy is enough
+  componentDefinitions: [...state.componentDefinitions],
+  stripColor: state.stripColor,
 });
 
 interface StripboardStore extends StripboardState {

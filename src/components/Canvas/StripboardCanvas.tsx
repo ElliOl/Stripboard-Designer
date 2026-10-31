@@ -27,6 +27,7 @@ import {
   isWireVisible,
 } from '@/utils/viewport';
 import { getRotatedPinPositions } from '@/lib/rotation';
+import { getStripCuts } from '@/lib/strip-segments';
 import {
   clampDropPosition,
   clampPartToPcb,
@@ -663,21 +664,7 @@ export const StripboardCanvas = () => {
         const pcbPosition = pcb ? pcb.position : { row: 0, col: 0 };
         const worldRow = strip.row + pcbPosition.row;
         
-        // Merge cuts array with old breaks array using Map for deduplication
-        const cutsArray = strip.cuts || [];
-        const breaksArray = strip.breaks || [];
-        
-        const cutsByCol = new Map();
-        cutsArray.forEach(cut => {
-          cutsByCol.set(cut.col, cut);
-        });
-        breaksArray.forEach(col => {
-          if (!cutsByCol.has(col)) {
-            cutsByCol.set(col, { col, type: 'drill' as const });
-          }
-        });
-        
-        const allCuts = Array.from(cutsByCol.values());
+        const allCuts = getStripCuts(strip);
         
         for (const cut of allCuts) {
           // Convert local column to world column for position check and ID
@@ -1765,21 +1752,7 @@ export const StripboardCanvas = () => {
               // Convert strip's local row to world row
               const worldRow = s.row + pcbPosition.row;
               
-              // Merge cuts array with old breaks array for backward compatibility
-              const cutsArray = s.cuts || [];
-              const breaksArray = s.breaks || [];
-              
-              const cutsByCol = new Map();
-              cutsArray.forEach(cut => {
-                cutsByCol.set(cut.col, cut);
-              });
-              breaksArray.forEach(col => {
-                if (!cutsByCol.has(col)) {
-                  cutsByCol.set(col, { col, type: 'drill' as const });
-                }
-              });
-              
-              const allCuts = Array.from(cutsByCol.values());
+              const allCuts = getStripCuts(s);
               
               return allCuts.map((cut) => {
                 // Convert local column to world column for cut ID

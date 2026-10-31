@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { useStripboardStore } from '@/store/stripboard';
 import { restoreAutosave, startAutosave } from '@/lib/autosave';
+import { RestoreGuard } from '@/components/RestoreGuard';
 import libraryData from '@/data/library.json';
 import type { ComponentDefinition } from '@/lib/types';
 
@@ -14,5 +15,6 @@ startAutosave();
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
+    <RestoreGuard />
   </React.StrictMode>,
 );

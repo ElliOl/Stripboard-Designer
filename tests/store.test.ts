@@ -327,3 +327,19 @@ describe('history and moving', () => {
     expect(S().componentDefinitions.some((d) => d.id === custom)).toBe(true);
   });
 });
+
+describe('undo snapshot', () => {
+  it('restores componentDefinitions and stripColor', () => {
+    const st = useStripboardStore;
+    st.getState().reset();
+    const before = st.getState().componentDefinitions.length;
+    st.getState().saveToHistory();
+    st.setState({
+      componentDefinitions: [...st.getState().componentDefinitions, { id: 'x' } as never],
+      stripColor: '#abcdef',
+    });
+    st.getState().undo();
+    expect(st.getState().componentDefinitions).toHaveLength(before);
+    expect(st.getState().stripColor).not.toBe('#abcdef');
+  });
+});

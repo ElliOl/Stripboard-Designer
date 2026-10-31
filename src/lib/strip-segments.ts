@@ -1,25 +1,28 @@
-import type { Strip } from './types';
+import type { Cut, Strip } from './types';
+
+/**
+ * All cuts on a strip: the `cuts` list merged with the legacy `breaks` list
+ * (treated as drill cuts), one per column.
+ */
+export function getStripCuts(strip: Strip): Cut[] {
+  const cutsByCol = new Map<number, Cut>();
+  (strip.cuts || []).forEach((cut) => {
+    cutsByCol.set(cut.col, cut);
+  });
+  (strip.breaks || []).forEach((col) => {
+    if (!cutsByCol.has(col)) {
+      cutsByCol.set(col, { col, type: 'drill' });
+    }
+  });
+  return Array.from(cutsByCol.values());
+}
 
 /**
  * Split a strip into its continuous copper segments, honouring drill and
  * slice cuts as well as the legacy `breaks` list.
  */
 export function getStripSegments(strip: Strip): Array<{ startCol: number; endCol: number }> {
-  // Merge cuts array with old breaks array using Map for deduplication
-  const cutsArray = strip.cuts || [];
-  const breaksArray = strip.breaks || [];
-  
-  const cutsByCol = new Map<number, { col: number; type: 'drill' | 'slice' }>();
-  cutsArray.forEach(cut => {
-    cutsByCol.set(cut.col, cut);
-  });
-  breaksArray.forEach(col => {
-    if (!cutsByCol.has(col)) {
-      cutsByCol.set(col, { col, type: 'drill' as const });
-    }
-  });
-  
-  const allCuts = Array.from(cutsByCol.values());
+  const allCuts = getStripCuts(strip);
   
   if (allCuts.length === 0) {
     return [{ startCol: strip.startCol, endCol: strip.endCol }];

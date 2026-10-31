@@ -7,6 +7,7 @@ import { FpsOverlay } from '@/components/Debug/FpsOverlay';
 import { HotkeyLegend, GhostButton } from '@/components/HotkeyLegend';
 import { useStripboardStore } from '@/store/stripboard';
 import { processFileToReferenceImage } from '@/lib/image-import';
+import { getStripCuts } from '@/lib/strip-segments';
 import '@/styles/globals.css';
 
 // Lazy load the sidebar for better initial load performance
@@ -258,7 +259,7 @@ function StatusBar() {
         </span>
       )}
       {(() => {
-        const totalCuts = strips.reduce((sum, s) => sum + s.breaks.length, 0);
+        const totalCuts = strips.reduce((sum, s) => sum + getStripCuts(s).length, 0);
         return totalCuts > 0 ? (
           <span>
             {totalCuts} cut{totalCuts !== 1 ? 's' : ''}

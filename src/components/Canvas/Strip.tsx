@@ -1,8 +1,8 @@
 import { memo } from 'react';
 import { Rect, Group, Shape } from 'react-konva';
-import type { Strip as StripType, Component, Wire, NetHighlightMode, Cut } from '@/lib/types';
+import type { Strip as StripType, Component, Wire, NetHighlightMode } from '@/lib/types';
 import { getConnectionRanges } from '@/lib/strip-ranges';
-import { getStripSegments } from '@/lib/strip-segments';
+import { getStripCuts, getStripSegments } from '@/lib/strip-segments';
 
 const GRID_PITCH = 25.4;
 const STRIP_HEIGHT = 16;
@@ -250,22 +250,8 @@ const StripImpl = ({
       {/* Skip holes that have drill cuts on them (drill cuts destroy the hole) */}
       <Shape
         sceneFunc={(ctx) => {
-          // Merge cuts array with old breaks array using Map for deduplication
-          const cutsArray = strip.cuts || [];
-          const breaksArray = strip.breaks || [];
-          
-          const cutsByCol = new Map<number, Cut>();
-          cutsArray.forEach(cut => {
-            cutsByCol.set(cut.col, cut);
-          });
-          breaksArray.forEach(col => {
-            if (!cutsByCol.has(col)) {
-              cutsByCol.set(col, { col, type: 'drill' as const });
-            }
-          });
-          
           const drillCutCols = new Set(
-            Array.from(cutsByCol.values())
+            getStripCuts(strip)
               .filter(c => c.type === 'drill')
               .map(c => c.col)
           );
@@ -285,26 +271,7 @@ const StripImpl = ({
 
       {/* Visual cut marks through the strip (non-interactive) */}
       {(() => {
-        // Merge cuts array with old breaks array for backward compatibility
-        // Old breaks (if not in cuts) should be treated as drill cuts
-        const cutsArray = strip.cuts || [];
-        const breaksArray = strip.breaks || [];
-        
-        // Create a map of all cuts by their column position for efficient lookup
-        const cutsByCol = new Map<number, Cut>();
-        cutsArray.forEach(cut => {
-          cutsByCol.set(cut.col, cut);
-        });
-        
-        // Add old breaks that aren't already in cuts array (treat as drill cuts)
-        breaksArray.forEach(col => {
-          if (!cutsByCol.has(col)) {
-            cutsByCol.set(col, { col, type: 'drill' as const });
-          }
-        });
-        
-        // Convert back to array and sort
-        const allCuts = Array.from(cutsByCol.values()).sort((a, b) => a.col - b.col);
+        const allCuts = getStripCuts(strip).sort((a, b) => a.col - b.col);
         
         return allCuts.map((cut) => {
           const isDrill = cut.type === 'drill';
