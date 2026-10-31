@@ -12,8 +12,12 @@ import {
   Settings,
   Circle,
   Minus,
+  FilePlus,
 } from 'lucide-react';
 import { useStripboardStore } from '@/store/stripboard';
+import { clearAutosave } from '@/lib/autosave';
+import libraryData from '@/data/library.json';
+import type { ComponentDefinition } from '@/lib/types';
 import { parseKiCadNetlist, isVirtualRef, type ParsedNetlist } from '@/lib/netlist-parser';
 import { isVeroProject, convertVeroProject } from '@/lib/vero-import';
 import type { ToolType, NetlistImportOptions } from '@/lib/types';
@@ -43,6 +47,8 @@ export const Toolbar = () => {
     exportProject,
     importProject,
     importNetlistWithOptions,
+    reset,
+    loadComponentDefinitions,
     components,
     componentDefinitions,
     layerVisibility,
@@ -156,6 +162,14 @@ export const Toolbar = () => {
     input.click();
   };
 
+  const handleNewProject = () => {
+    if (!confirm('Start a new project? Unsaved changes to the current board will be lost.')) return;
+    reset();
+    // reset() clears the component definitions, so load the built-in library again
+    loadComponentDefinitions(libraryData as ComponentDefinition[]);
+    clearAutosave();
+  };
+
   const handleImportNetlist = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -163,7 +177,7 @@ export const Toolbar = () => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
       const name = file.name.toLowerCase();
-      if (!name.endsWith('.net') && !name.endsWith('.xml')) {
+      if (!name.endsWith('.net')) {
         if (
           !confirm(
             `"${file.name}" doesn't look like a KiCad netlist (.net) file.\nTry to import it anyway?`
@@ -296,6 +310,12 @@ export const Toolbar = () => {
 
       {/* ─── File Operations ──────────────────────────────── */}
       <div className="flex flex-col items-center px-1.5 gap-0.5 pb-2.5">
+        <ToolBtn
+          icon={FilePlus}
+          onClick={handleNewProject}
+          title="New project"
+          size={15}
+        />
         <ToolBtn
           icon={FileUp}
           onClick={handleImportNetlist}

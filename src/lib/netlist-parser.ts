@@ -46,6 +46,7 @@ function tokenize(input: string): string[] {
   const len = input.length;
 
   while (i < len) {
+    const start = i;
     const ch = input[i];
 
     // Skip whitespace
@@ -81,11 +82,14 @@ function tokenize(input: string): string[] {
 
     // Unquoted atom
     let atom = '';
-    while (i < len && !/[\s()"']/.test(input[i])) {
+    while (i < len && !/[\s()"]/.test(input[i])) {
       atom += input[i];
       i++;
     }
     if (atom) tokens.push(atom);
+
+    // Defensive: every iteration must consume input, or the loop never ends
+    if (i === start) i++;
   }
 
   return tokens;

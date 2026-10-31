@@ -54,6 +54,9 @@ export const HotkeyLegend = ({ isOpen, onClose }: HotkeyLegendProps) => {
       
       {/* Legend Island */}
       <div
+        role="dialog"
+        aria-modal="true"
+        data-hotkey-legend="true"
         className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] rounded-xl select-none max-w-md w-full mx-4"
         style={{
           background: 'rgba(17, 17, 20, 0.95)',

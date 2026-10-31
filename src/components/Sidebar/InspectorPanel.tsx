@@ -230,7 +230,7 @@ function ConfirmDialog({
   }, [onConfirm, onCancel]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50">
       <div className="bg-[#1a1a22] border border-[#2a2a34] rounded-xl shadow-2xl shadow-black/50 p-4 max-w-sm mx-4">
         <div className="flex items-start gap-3 mb-4">
           <AlertTriangle size={18} className="text-amber-400 shrink-0 mt-0.5" />

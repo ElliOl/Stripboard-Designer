@@ -95,7 +95,7 @@ export const ReferenceImage = ({
     group.scaleY(1);
 
     onTransformEnd(newX, newY, scaleX);
-  }, [width, onTransformEnd]);
+  }, [onTransformEnd]);
 
   if (!image) return null;
 

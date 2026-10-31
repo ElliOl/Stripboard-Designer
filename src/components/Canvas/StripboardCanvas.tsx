@@ -1,6 +1,8 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { Stage, Layer, Line, Circle, Group, Rect, Text } from 'react-konva';
-import type { KonvaEventObject } from 'konva/lib/Node';
+import type { KonvaEventObject, Node as KonvaNode } from 'konva/lib/Node';
+import type { Stage as KonvaStage } from 'konva/lib/Stage';
+import type { Layer as KonvaLayer } from 'konva/lib/Layer';
 import type { GridPosition, RatsNestConnection, Component as ComponentType, Wire as WireType, ComponentDefinition, Strip as StripType, ComponentPin } from '@/lib/types';
 import { Grid } from './Grid';
 import { Strip } from './Strip';
@@ -33,7 +35,7 @@ const DRAG_THRESHOLD = 5; // pixels in screen space before a drag starts
  * Determine the default rotation for a component.
  * All components should be placed perpendicular to strips (90°) to avoid shorting.
  */
-function getDefaultRotation(_definition: ComponentDefinition): 0 | 90 | 180 | 270 {
+function getDefaultRotation(): 0 | 90 | 180 | 270 {
   // All components should be perpendicular to strips (which run horizontally)
   return 90;
 }
@@ -125,8 +127,8 @@ function getPinDragLimits(def: ComponentDefinition): { minDist: number; maxDist:
 
 /** Walk from a Konva target node up to the Stage looking for a named
  *  component or wire Group. Returns the item ID or null. */
-function getItemIdFromTarget(target: any): string | null {
-  let node = target;
+function getItemIdFromTarget(target: KonvaNode | null): string | null {
+  let node: KonvaNode | null = target;
   while (node && node !== node.getStage()) {
     const name: string = node.name?.() || '';
     if (name.startsWith('component:')) return name.slice('component:'.length);
@@ -182,13 +184,12 @@ export const StripboardCanvas = () => {
   const updateReferenceImage = useStripboardStore((s) => s.updateReferenceImage);
   const updateReferenceImageById = useStripboardStore((s) => s.updateReferenceImageById);
   const copySelected = useStripboardStore((s) => s.copySelected);
-  const paste = useStripboardStore((s) => s.paste);
   const moveComponentPin = useStripboardStore((s) => s.moveComponentPin);
   const finalizePinDrag = useStripboardStore((s) => s.finalizePinDrag);
 
-  const stageRef = useRef<any>(null);
-  const cachedComponentLayerRef = useRef<any>(null); // Cached background components
-  const activeComponentLayerRef = useRef<any>(null); // Active/selected components (uncached)
+  const stageRef = useRef<KonvaStage>(null);
+  const cachedComponentLayerRef = useRef<KonvaLayer>(null); // Cached background components
+  const activeComponentLayerRef = useRef<KonvaLayer>(null); // Active/selected components (uncached)
   const containerRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 });
 
@@ -492,29 +493,28 @@ export const StripboardCanvas = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if typing in an input field
+      const t = e.target;
       if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLTextAreaElement ||
+        t instanceof HTMLSelectElement ||
+        (t instanceof HTMLElement && t.isContentEditable)
       ) {
         return;
       }
+      // Ignore while a modal dialog is open
+      if (document.querySelector('[aria-modal="true"]')) return;
 
       // Copy: Cmd/Ctrl+C
       if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
         e.preventDefault();
         copySelected();
       }
-
-      // Paste: Cmd/Ctrl+V
-      if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
-        e.preventDefault();
-        paste();
-      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [copySelected, paste]);
+  }, [copySelected]);
 
   // ─── Resize ────────────────────────────────────────────────
   useEffect(() => {
@@ -663,7 +663,7 @@ export const StripboardCanvas = () => {
 
       return ids;
     },
-    [components, wires, strips]
+    [components, wires, strips, pcbs]
   );
 
   // ─── Reference Prefix ─────────────────────────────────────
@@ -1391,7 +1391,7 @@ export const StripboardCanvas = () => {
     const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
 
     // Determine appropriate rotation for this component
-    const rotation = getDefaultRotation(def);
+    const rotation = getDefaultRotation();
     
     // Get rotated pin positions
     const rotatedPinPositions = getRotatedPinPositions(def.pins, rotation);
@@ -1696,7 +1696,7 @@ export const StripboardCanvas = () => {
               
               const allCuts = Array.from(cutsByCol.values());
               
-              return allCuts.map((cut: any) => {
+              return allCuts.map((cut) => {
                 // Convert local column to world column for cut ID
                 const worldCol = cut.col + pcbPosition.col;
                 const cutId = `cut-${worldRow}-${worldCol}`;

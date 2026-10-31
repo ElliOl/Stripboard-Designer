@@ -178,6 +178,10 @@ export type HistoryEntry = {
   strips: Strip[];
   wires: Wire[];
   nets: Net[];
+  rows: number;
+  cols: number;
+  pcbs: PCB[];
+  netGroups: NetGroup[];
 };
 
 export type ProjectData = {
@@ -191,6 +195,8 @@ export type ProjectData = {
   strips: Strip[];
   wires: Wire[];
   nets: Net[];
+  netGroups?: NetGroup[]; // Optional for backward compatibility
+  referenceImages?: ReferenceImageState[]; // Optional for backward compatibility
   stripColor?: string; // Optional for backward compatibility
   customDefinitions?: ComponentDefinition[]; // Custom component definitions (generic/custom)
   importReport?: ImportReport | null; // Preserved import summary from last netlist import

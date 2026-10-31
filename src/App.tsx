@@ -1,4 +1,5 @@
 import { useEffect, lazy, Suspense, useState } from 'react';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { StripboardCanvas } from '@/components/Canvas/StripboardCanvas';
 import { Toolbar } from '@/components/Toolbar/Toolbar';
 import { ZoomIsland } from '@/components/Toolbar/ZoomIsland';
@@ -33,11 +34,29 @@ function App() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Skip if an input is focused
+      const t = e.target;
       if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLTextAreaElement ||
+        t instanceof HTMLSelectElement ||
+        (t instanceof HTMLElement && t.isContentEditable)
       )
         return;
+
+      // While a modal is open, only the hotkey legend's own close keys work
+      const modal = document.querySelector('[aria-modal="true"]');
+      if (modal) {
+        const legendOnly = modal.getAttribute('data-hotkey-legend') === 'true';
+        const closeKey =
+          e.key === 'Escape' ||
+          (!e.ctrlKey && !e.metaKey && !e.altKey &&
+            (e.key.toLowerCase() === 'h' || e.key === '?'));
+        if (legendOnly && showHotkeyLegend && closeKey) {
+          e.preventDefault();
+          setShowHotkeyLegend(false);
+        }
+        return;
+      }
 
       const ctrl = e.ctrlKey || e.metaKey;
 
@@ -123,14 +142,21 @@ function App() {
   useEffect(() => {
     const handlePaste = async (e: ClipboardEvent) => {
       // Don't intercept paste inside inputs/textareas
+      const t = e.target;
       if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLTextAreaElement ||
+        t instanceof HTMLSelectElement ||
+        (t instanceof HTMLElement && t.isContentEditable)
       )
         return;
+      if (document.querySelector('[aria-modal="true"]')) return;
 
       const items = e.clipboardData?.items;
-      if (!items) return;
+      if (!items) {
+        useStripboardStore.getState().paste();
+        return;
+      }
 
       // Look for an image blob in the clipboard
       for (const item of items) {
@@ -154,6 +180,10 @@ function App() {
           return;
         }
       }
+
+      // No image on the clipboard: paste from the internal component clipboard
+      e.preventDefault();
+      useStripboardStore.getState().paste();
     };
 
     window.addEventListener('paste', handlePaste);
@@ -164,6 +194,7 @@ function App() {
   const showPerf = new URLSearchParams(window.location.search).has('perf');
 
   return (
+    <ErrorBoundary>
     <div className="w-screen h-screen flex flex-col overflow-hidden bg-[#09090b]">
       <div className="flex-1 flex overflow-hidden relative">
         <StripboardCanvas />
@@ -178,6 +209,7 @@ function App() {
       </div>
       <StatusBar />
     </div>
+    </ErrorBoundary>
   );
 }
 

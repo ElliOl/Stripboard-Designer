@@ -8,6 +8,8 @@ Import a KiCad netlist and every part arrives with its connections. Place the pa
 
 Open `Stripboard-Designer.html` in any modern browser. That one file is the whole app: it works offline and needs no install. (Build it yourself with `npm run build:single`; it ends up in `dist-single/`.)
 
+Your work is saved automatically in the browser, so reloading the page brings it back. The New project button in the toolbar starts over.
+
 ## How it works
 
 1. **Import your circuit.** In KiCad, export a netlist (File > Export > Netlist), then click the netlist button in the toolbar and choose the `.net` file. Each part is added to the board with its nets, and power symbols become named nets.

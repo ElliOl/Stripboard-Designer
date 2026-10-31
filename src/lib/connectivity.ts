@@ -159,7 +159,7 @@ export function analyzeConnectivity(
  */
 function findStripAtPosition(pos: GridPosition, index: SpatialIndex): Strip | null {
   // Check each PCB to find which one contains this position
-  for (const [_pcbId, pcb] of index.pcbsById) {
+  for (const pcb of index.pcbsById.values()) {
     const localRow = pos.row - pcb.position.row;
     const localCol = pos.col - pcb.position.col;
     

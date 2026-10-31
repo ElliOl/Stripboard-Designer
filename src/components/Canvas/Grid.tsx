@@ -105,7 +105,7 @@ export const Grid = ({ viewportBounds }: GridProps) => {
 
             {/* Holes - Single Shape using sceneFunc for performance */}
             <Shape
-              sceneFunc={(ctx, _shape) => {
+              sceneFunc={(ctx) => {
                 ctx.fillStyle = '#0a0a0e';
                 ctx.strokeStyle = '#28282e';
                 ctx.lineWidth = 0.6;
