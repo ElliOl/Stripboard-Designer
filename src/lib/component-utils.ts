@@ -60,18 +60,19 @@ export function createGenericDefinition(
   if (useDIP) {
     // DIP layout: pins on two rows with a 3-hole gap (for ICs)
     const half = Math.ceil(pinCount / 2);
-    // Top row: pins 1..half (left to right)
+    // Counter-clockwise numbering seen from above, as on a real DIP:
+    // bottom row: pins 1..half (left to right)
     for (let i = 0; i < half; i++) {
       pins.push({
         number: sorted[i],
-        position: { row: 0, col: i },
+        position: { row: 3, col: i },
       });
     }
-    // Bottom row: remaining pins (right to left, mirroring DIP convention)
+    // Top row: remaining pins (right to left)
     for (let i = 0; i < pinCount - half; i++) {
       pins.push({
         number: sorted[half + i],
-        position: { row: 3, col: half - 1 - i },
+        position: { row: 0, col: half - 1 - i },
       });
     }
 

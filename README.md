@@ -1,218 +1,57 @@
 # Stripboard Designer
 
-An interactive web-based tool for designing stripboard layouts from KiCad netlists.
+Design stripboard (Veroboard) layouts from your KiCad schematics.
 
-## Features
+Import a KiCad netlist and every part arrives with its connections. Place the parts on the board, add wire links and track cuts, and the app shows you what is still unconnected and where you have made a short.
 
-- 🎨 **Interactive Canvas** - Konva-powered visual editing with zoom and pan
-- 🔧 **Component Library** - Pre-built footprints for ICs, resistors, capacitors, and more
-- 📐 **Grid-based Layout** - Standard 0.1" (2.54mm) stripboard pitch
-- 🎯 **Manual Routing** - Full control over strip and wire placement
-- ⚡ **Ratsnest** - Visual connection guides
-- 💾 **Import/Export** - KiCad netlist support (coming soon)
-- 🎨 **Design Tokens** - Customizable theme using CSS variables
+## Running it
 
-## Tech Stack
+Open `Stripboard-Designer.html` in any modern browser. That one file is the whole app: it works offline and needs no install. (Build it yourself with `npm run build:single`; it ends up in `dist-single/`.)
 
-- **React 18** + **TypeScript** - Modern, type-safe UI
-- **Vite** - Lightning-fast dev server and build tool
-- **Konva** + **React-Konva** - High-performance 2D canvas rendering
-- **Zustand** - Lightweight state management
-- **Tailwind CSS** - Utility-first styling with custom design tokens
-- **Lucide Icons** - Beautiful, consistent icons
+## How it works
 
-## Getting Started
+1. **Import your circuit.** In KiCad, export a netlist (File > Export > Netlist), then click the netlist button in the toolbar and choose the `.net` file. Each part is added to the board with its nets, and power symbols become named nets.
+2. **Place the parts.** Drag them onto the board and press R to rotate. Lead spacing on resistors, diodes and similar parts can be stretched by dragging a pin.
+3. **Connect and cut.** Parts sitting on the same copper strip are connected. Draw wire links between strips (W), and break strips with drill cuts (X) or slice cuts between holes (S).
+4. **Check your work.** Ratsnest lines show connections that still need making. Shorts between different nets are flagged in red. The Inspector lists unconnected nets; click one to jump to it.
+5. **Save.** Projects save and open as `.json` files.
 
-### Prerequisites
+If the schematic changes, import the netlist again and choose **Update existing board**. Your placement is kept, and only values, footprints or nets are updated.
 
-- Node.js 18+ 
-- npm or yarn
+### Other features
 
-### Installation
+- **Vero Designer projects:** open a project saved from Vero Designer and its generated layout is converted into an editable board. Off-board parts such as panel pots become labelled pads at the board edge.
+- **Reference images:** place a photo, an image or a PDF page behind the board to trace an existing layout.
+- **Group by Connectivity:** clusters freshly imported parts by the nets they share, so related parts start out close together.
+- **Multiple boards:** split a design across several boards in one project.
+- **Layers:** show or hide parts, wires, strips, net colours, cuts, labels and errors.
+
+### Shortcuts
+
+| Key | Action |
+| --- | --- |
+| V / W / X / S | Select, wire, drill cut, slice cut |
+| R | Rotate selected |
+| N | Toggle ratsnest |
+| Delete | Delete selected |
+| Cmd+Z / Cmd+Shift+Z | Undo / redo |
+| Scroll | Zoom |
+| Middle or right drag | Pan |
+| H or ? | Show all shortcuts |
+
+## Development
 
 ```bash
-# Install dependencies
 npm install
-
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Preview production build
-npm run preview
+npm run dev            # dev server at http://localhost:5173
+npm run build:single   # single offline HTML file in dist-single/
+npm run build          # regular build for hosting
 ```
 
-### Development
+## Credits
 
-The app will be available at `http://localhost:5173`
-
-## Project Structure
-
-```
-stripboard-designer/
-├── src/
-│   ├── components/
-│   │   ├── Canvas/          # Konva canvas components
-│   │   │   ├── StripboardCanvas.tsx
-│   │   │   ├── Grid.tsx
-│   │   │   ├── Strip.tsx
-│   │   │   └── Component.tsx
-│   │   ├── Toolbar/         # Tool selection and controls
-│   │   └── Sidebar/         # Component library panel
-│   ├── lib/
-│   │   └── types.ts         # TypeScript type definitions
-│   ├── store/
-│   │   └── stripboard.ts    # Zustand state management
-│   ├── styles/
-│   │   ├── tokens.css       # Design tokens (colors, spacing, etc.)
-│   │   └── globals.css      # Global styles
-│   └── App.tsx
-├── public/
-│   └── components/
-│       └── library.json     # Component library definitions
-└── package.json
-```
-
-## Current Features
-
-### Canvas Controls
-- **Scroll** to zoom in/out
-- **Drag** to pan (in Select or Pan mode)
-- **Click** components/strips to select
-- **Wheel + Drag** for precision zooming
-
-### Tools Available
-- ✅ Select - Click to select items
-- ✅ Pan - Drag to move viewport
-- ⏳ Place Component (drag from library - coming soon)
-- ⏳ Route Strip - Draw copper strips
-- ⏳ Route Wire - Draw jumper wires
-- ⏳ Break Strip - Cut copper traces
-
-### Component Library
-- DIP-8, DIP-14, DIP-16 ICs
-- Axial resistors
-- Radial capacitors
-- More components coming soon!
-
-## Roadmap
-
-### Phase 1: Core Functionality ✅
-- [x] Canvas with grid rendering
-- [x] Zoom and pan controls
-- [x] Component library system
-- [x] Basic state management
-
-### Phase 2: Interactive Tools (In Progress)
-- [ ] Component placement via drag-and-drop
-- [ ] Strip drawing tool
-- [ ] Wire routing tool
-- [ ] Strip break/link tools
-- [ ] Component leg extension
-
-### Phase 3: Netlist Integration
-- [ ] KiCad netlist parser
-- [ ] Automatic ratsnest generation
-- [ ] Net highlighting
-- [ ] Connection validation
-
-### Phase 4: Export & Sharing
-- [ ] SVG export
-- [ ] PDF generation
-- [ ] PNG/image export
-- [ ] Project save/load (JSON)
-- [ ] BOM generation
-
-### Phase 5: Advanced Features
-- [ ] Undo/redo
-- [ ] Keyboard shortcuts
-- [ ] Grid snapping options
-- [ ] Layer visibility controls
-- [ ] Design rule checking
-- [ ] Cloud project storage
-
-## Customization
-
-### Design Tokens
-
-Modify `src/styles/tokens.css` to customize colors, spacing, and other design aspects:
-
-```css
-:root {
-  --color-strip: #c87533;    /* Copper strip color */
-  --color-wire: #3b82f6;     /* Wire color */
-  --grid-pitch: 25.4px;      /* Grid spacing */
-  /* ... and more */
-}
-```
-
-### Component Library
-
-Add new components by editing `src/data/library.json`:
-
-```json
-{
-  "id": "my-component",
-  "name": "Custom Component",
-  "category": "IC",
-  "footprint": {
-    "type": "DIP",
-    "dimensions": { "rows": 2, "cols": 4 }
-  },
-  "pins": [...]
-}
-```
-
-## Deployment
-
-### Single offline HTML file
-
-```bash
-npm run build:single
-```
-
-Produces `dist-single/index.html`, one self-contained file with everything inlined. Anyone can open it directly in a browser, offline, with no install or server. Attach it to a GitHub release for easy sharing.
-
-### Deploy to Vercel
-
-```bash
-npm install -g vercel
-vercel
-```
-
-Or connect your GitHub repo to Vercel for automatic deployments.
-
-### Deploy to Netlify
-
-```bash
-npm run build
-# Upload dist/ folder to Netlify
-```
-
-### Deploy to GitHub Pages
-
-```bash
-npm run build
-# Configure base path in vite.config.ts
-# Deploy dist/ folder
-```
-
-## Contributing
-
-This is a personal project, but suggestions and bug reports are welcome! Feel free to open issues or submit PRs.
+The Vero Designer import (and the autorouter being added) uses work from [Vero Designer](https://github.com/blazethablunt/VeroDesigner) by blazethablunt, with permission.
 
 ## License
 
-MIT License - feel free to use this for your own projects!
-
-## Acknowledgments
-
-- Inspired by VeroRoute but designed to be simpler and more intuitive
-- Built for the maker community who love stripboard prototyping
-- Designed to work seamlessly with KiCad workflows
-
----
-
-**Happy stripboard designing! 🔌✨**
+MIT

@@ -248,6 +248,7 @@ const ComponentImpl = ({
 
   // Is component horizontal or diagonal?
   const isHoriz = rMinRow === rMaxRow;
+  const sipInline = isHoriz && component.pins.length > 1;
 
   // Pin distance for 2-pin components (in grid units)
   const pinDist = definition.pins.length === 2
@@ -269,11 +270,15 @@ const ComponentImpl = ({
     return resolveLedColor(component.ledColor);
   }, [subtype, component.ledColor]);
 
-  // ─── Electrolytic "+" marker position (rotation-aware) ─────
+  // ─── Electrolytic polarity (KiCad: pin 1 = +, pin 2 = −) ───
+  const capPlusIdx = Math.max(0, component.pins.findIndex((p) => p.number === '1'));
+  const capMinusIdx = capPlusIdx === 0 ? 1 : 0;
+
+  // "+" marker position (rotation-aware)
   const capPlusPos = (() => {
     if (subtype !== 'electrolytic') return null;
-    const p0Row = rotatedPins[0].row;
-    const p0Col = rotatedPins[0].col;
+    const p0Row = rotatedPins[capPlusIdx].row;
+    const p0Col = rotatedPins[capPlusIdx].col;
     const cRow = (rMinRow + rMaxRow) / 2;
     const cCol = (rMinCol + rMaxCol) / 2;
     const dRow = p0Row - cRow;
@@ -283,6 +288,14 @@ const ComponentImpl = ({
       x: p0Col * GP + (dCol / dist) * GP * 0.4 - 3,
       y: p0Row * GP + (dRow / dist) * GP * 0.4 - 4,
     };
+  })();
+
+  // Negative stripe: a 120° arc centred on the direction of the − lead
+  const negativeStripeRotation = (() => {
+    const neg = rotatedPins[capMinusIdx] ?? rotatedPins[0];
+    const dRow = neg.row - (rMinRow + rMaxRow) / 2;
+    const dCol = neg.col - (rMinCol + rMaxCol) / 2;
+    return (Math.atan2(dRow, dCol) * 180) / Math.PI - 60;
   })();
 
   const finalOpacity = opacity;
@@ -627,10 +640,13 @@ const ComponentImpl = ({
 
       {/* ─── Diode Body (Axial) — unified for H/V/diagonal ──── */}
       {isAxial && isDiode && !isDiodeUpright && (() => {
-        const p1x = rotatedPins[0].col * GP;
-        const p1y = rotatedPins[0].row * GP;
-        const p2x = rotatedPins[1].col * GP;
-        const p2y = rotatedPins[1].row * GP;
+        // Draw anode → cathode so the band sits at the cathode (KiCad: pin 1 = K)
+        const cathodeIdx = Math.max(0, component.pins.findIndex((p) => p.number === '1'));
+        const anodeIdx = cathodeIdx === 0 ? 1 : 0;
+        const p1x = rotatedPins[anodeIdx].col * GP;
+        const p1y = rotatedPins[anodeIdx].row * GP;
+        const p2x = rotatedPins[cathodeIdx].col * GP;
+        const p2y = rotatedPins[cathodeIdx].row * GP;
         const dxP = p2x - p1x;
         const dyP = p2y - p1y;
         const dist = Math.sqrt(dxP * dxP + dyP * dyP);
@@ -648,7 +664,7 @@ const ComponentImpl = ({
               stroke={isSelected ? '#c8ff2e' : customStroke || '#6a6a7a'}
               strokeWidth={isSelected ? 2 : 1} cornerRadius={1}
             />
-            {/* Cathode band at pin 2 end */}
+            {/* Cathode band at the cathode end */}
             <Rect x={halfBody - 3} y={-5} width={3} height={10} fill={isZener ? '#808080' : '#333333'} listening={false} />
             {isZener && <Rect x={halfBody - 6} y={-5} width={2} height={10} fill="#808080" listening={false} />}
           </Group>
@@ -724,7 +740,7 @@ const ComponentImpl = ({
               innerRadius={radialRadius - 3}
               outerRadius={radialRadius}
               angle={120}
-              rotation={isHoriz ? 120 : 30}
+              rotation={negativeStripeRotation}
               fill="#4a6aaa"
               listening={false}
             />
@@ -1592,38 +1608,39 @@ const ComponentImpl = ({
       )}
 
       {/* ─── SIP text ───────────────────────────────────────── */}
+      {/* Text sits inside a horizontal body; one-pin pads put it beside the pad */}
       {isSIP && showRefs && showLabels && (
         <Text
-          x={isHoriz ? bodyX : bodyX + bodyW + 3}
+          x={sipInline ? bodyX : bodyX + bodyW + 3}
           y={
-            isHoriz
+            sipInline
               ? bodyY + bodyH / 2 - (showValues && component.value ? 9 : 5)
               : cY - (showValues && component.value ? 9 : 4)
           }
-          width={isHoriz ? bodyW : undefined}
+          width={sipInline ? bodyW : undefined}
           text={component.reference}
           fontSize={9}
           fontFamily="monospace"
           fill={customColor ? getTextColor(customColor) : '#aaa'}
-          align={isHoriz ? 'center' : undefined}
+          align={sipInline ? 'center' : undefined}
           fontStyle="bold"
           listening={false}
         />
       )}
       {isSIP && showValues && showLabels && component.value && (
         <Text
-          x={isHoriz ? bodyX : bodyX + bodyW + 3}
+          x={sipInline ? bodyX : bodyX + bodyW + 3}
           y={
-            isHoriz
+            sipInline
               ? bodyY + bodyH / 2 + (showRefs ? 3 : -5)
               : cY + (showRefs ? 2 : -4)
           }
-          width={isHoriz ? bodyW : undefined}
+          width={sipInline ? bodyW : undefined}
           text={component.value}
           fontSize={8}
           fontFamily="monospace"
           fill="#a78bfa"
-          align={isHoriz ? 'center' : undefined}
+          align={sipInline ? 'center' : undefined}
           listening={false}
         />
       )}

@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 import path from 'path';
 
-// `npm run build:single` produces one self-contained dist-single/index.html
+// `npm run build:single` produces one self-contained dist-single/Stripboard-Designer.html
 // that can be opened straight from disk with no server.
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {

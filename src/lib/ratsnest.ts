@@ -8,6 +8,7 @@ import type {
   PCB,
 } from './types';
 import { buildSpatialIndex, posKey, type SpatialIndex } from './spatial-index';
+import { getStripSegments } from './strip-segments';
 
 // ─── Ratsnest Calculator ───────────────────────────────────
 //
@@ -345,25 +346,3 @@ function findSegmentContaining(
   return segments.find((s) => col >= s.startCol && col <= s.endCol) || null;
 }
 
-function getStripSegments(strip: Strip): Array<{ startCol: number; endCol: number }> {
-  if (!strip.breaks || strip.breaks.length === 0) {
-    return [{ startCol: strip.startCol, endCol: strip.endCol }];
-  }
-
-  const segments: Array<{ startCol: number; endCol: number }> = [];
-  const sortedBreaks = [...strip.breaks].sort((a, b) => a - b);
-  
-  let start = strip.startCol;
-  for (const breakCol of sortedBreaks) {
-    if (breakCol > start) {
-      segments.push({ startCol: start, endCol: breakCol - 1 });
-    }
-    start = breakCol + 1;
-  }
-  
-  if (start <= strip.endCol) {
-    segments.push({ startCol: start, endCol: strip.endCol });
-  }
-
-  return segments;
-}

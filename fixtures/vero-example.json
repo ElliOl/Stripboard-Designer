@@ -1,0 +1,1135 @@
+{
+  "format": "Vero Designer",
+  "version": 13,
+  "components": [
+    {
+      "id": "P1",
+      "type": "terminal",
+      "value": "INPUT",
+      "x": 120,
+      "y": 320,
+      "rotation": 0,
+      "instanceUid": "CMP-mvwpvpvv-2o0qju",
+      "netScope": "offboard"
+    },
+    {
+      "id": "R1",
+      "type": "resistor",
+      "value": "10kΩ",
+      "x": 300,
+      "y": 320,
+      "rotation": 0,
+      "instanceUid": "CMP-mvwpvpvv-jyy38p"
+    },
+    {
+      "id": "Q1",
+      "type": "transistor",
+      "transistorKind": "npn",
+      "value": "BC547",
+      "x": 500,
+      "y": 320,
+      "rotation": 0,
+      "instanceUid": "CMP-mvwpvpvv-gzk0zs"
+    },
+    {
+      "id": "C1",
+      "type": "capacitor",
+      "value": "100nF",
+      "x": 400,
+      "y": 500,
+      "rotation": 90,
+      "instanceUid": "CMP-mvwpvpvv-3od0hj"
+    },
+    {
+      "id": "D1",
+      "type": "diode",
+      "value": "1N4148",
+      "x": 620,
+      "y": 160,
+      "rotation": 90,
+      "instanceUid": "CMP-mvwpvpvv-319j8f"
+    },
+    {
+      "id": "P2",
+      "type": "terminal",
+      "value": "9V",
+      "x": 620,
+      "y": 80,
+      "rotation": 270,
+      "instanceUid": "CMP-mvwpvpvv-5tytc2",
+      "netScope": "offboard"
+    },
+    {
+      "id": "U1",
+      "type": "opamp",
+      "value": "TL072",
+      "x": 800,
+      "y": 360,
+      "rotation": 0,
+      "instanceUid": "CMP-mvwpvpvv-nzf4sv",
+      "opampPackageUid": "OPKG-mvwpvpvv-zch3lt"
+    },
+    {
+      "id": "R2",
+      "type": "resistor",
+      "value": "100kΩ",
+      "x": 760,
+      "y": 560,
+      "rotation": 0,
+      "instanceUid": "CMP-mvwpvpvv-l8jhwy"
+    },
+    {
+      "id": "C2",
+      "type": "capacitorPolarized",
+      "value": "10µF",
+      "x": 1020,
+      "y": 500,
+      "rotation": 90,
+      "instanceUid": "CMP-mvwpvpvv-j6htye"
+    },
+    {
+      "id": "P3",
+      "type": "terminal",
+      "value": "OUTPUT",
+      "x": 1080,
+      "y": 360,
+      "rotation": 0,
+      "instanceUid": "CMP-mvwpvpvv-r27nbf",
+      "netScope": "offboard"
+    },
+    {
+      "id": "P4",
+      "type": "terminal",
+      "value": "GND",
+      "x": 400,
+      "y": 660,
+      "rotation": 90,
+      "instanceUid": "CMP-mvwpvpvv-11s7gh",
+      "netScope": "offboard"
+    },
+    {
+      "id": "P5",
+      "type": "terminal",
+      "value": "GND",
+      "x": 1020,
+      "y": 660,
+      "rotation": 90,
+      "instanceUid": "CMP-mvwpvpvv-v5ynsh",
+      "netScope": "offboard"
+    }
+  ],
+  "wires": [
+    {
+      "id": "W-mvwpvpvv-1ugpxe",
+      "a": "P1:1",
+      "b": "R1:1"
+    },
+    {
+      "id": "W-mvwpvpvv-3nwj7j",
+      "a": "R1:2",
+      "b": "Q1:B"
+    },
+    {
+      "id": "W-mvwpvpvv-fczq71",
+      "a": "R1:2",
+      "b": "C1:1"
+    },
+    {
+      "id": "W-mvwpvpvv-9y3pbi",
+      "a": "C1:2",
+      "b": "P4:1"
+    },
+    {
+      "id": "W-mvwpvpvv-gn3ere",
+      "a": "Q1:C",
+      "b": "D1:K"
+    },
+    {
+      "id": "W-mvwpvpvv-sdb2xj",
+      "a": "D1:A",
+      "b": "P2:1"
+    },
+    {
+      "id": "W-mvwpvpvv-j5cdl3",
+      "a": "Q1:E",
+      "b": "U1:IN−"
+    },
+    {
+      "id": "W-mvwpvpvv-iw6j2b",
+      "a": "U1:V+",
+      "b": "P2:1"
+    },
+    {
+      "id": "W-mvwpvpvv-8s835r",
+      "a": "U1:V−",
+      "b": "P4:1"
+    },
+    {
+      "id": "W-mvwpvpvv-lqq5hz",
+      "a": "U1:OUT",
+      "b": "P3:1"
+    },
+    {
+      "id": "W-mvwpvpvv-z292rx",
+      "a": "U1:OUT",
+      "b": "C2:+"
+    },
+    {
+      "id": "W-mvwpvpvv-ig9v57",
+      "a": "C2:−",
+      "b": "P5:1"
+    },
+    {
+      "id": "W-mvwpvpvv-xyxqgg",
+      "a": "U1:IN+",
+      "b": "R2:1"
+    },
+    {
+      "id": "W-mvwpvpvv-rw4i4v",
+      "a": "R2:2",
+      "b": "U1:OUT"
+    }
+  ],
+  "counters": {
+    "P": 5,
+    "R": 2,
+    "Q": 1,
+    "C": 2,
+    "D": 1,
+    "U": 1
+  },
+  "netColorOverrides": {},
+  "schematicSettings": {
+    "stickyComponents": true,
+    "componentGridSpacing": 6,
+    "gndDisplay": "symbol"
+  },
+  "boardSettings": {
+    "maxColumns": 20,
+    "maxRows": 18,
+    "busSpacing": 1,
+    "spareRows": 0,
+    "componentOpacity": 1,
+    "avoidLinksOverComponents": true,
+    "allowDoubleLinks": true,
+    "autoDescribe": true,
+    "standingResistors": false
+  },
+  "routerMode": "x",
+  "projectMeta": {
+    "name": "",
+    "description": "U1 is TL072\nQ1 is BC547\nD1 is 1N4148",
+    "autoDescriptionLines": [
+      "U1 is TL072",
+      "Q1 is BC547",
+      "D1 is 1N4148"
+    ],
+    "creator": "",
+    "displayCreator": false,
+    "verified": false
+  },
+  "veroLayout": {
+    "format": "Vero Designer saved layout",
+    "version": 1,
+    "columns": 12,
+    "rows": 8,
+    "placements": [
+      {
+        "componentId": "U1",
+        "componentIdentity": "opamp:OPKG-mvwpvpvv-zch3lt",
+        "component": {
+          "id": "U1",
+          "instanceUid": "OPKG-mvwpvpvv-zch3lt",
+          "opampPackageUid": "OPKG-mvwpvpvv-zch3lt",
+          "type": "opamp",
+          "value": "TL072",
+          "x": 800,
+          "y": 360,
+          "rotation": 0,
+          "opampKind": "double",
+          "opampSection": "A",
+          "opampBaseId": "U1",
+          "packagePins": 8,
+          "opampPackage": "DIP8",
+          "opampPinout": {
+            "1": "OUT A",
+            "2": "IN− A",
+            "3": "IN+ A",
+            "4": "V−",
+            "5": "IN+ B",
+            "6": "IN− B",
+            "7": "OUT B",
+            "8": "V+"
+          },
+          "boardMembers": [
+            "U1"
+          ],
+          "boardPinSources": {
+            "P1": [
+              "U1:OUT"
+            ],
+            "P2": [
+              "U1:IN−"
+            ],
+            "P3": [
+              "U1:IN+"
+            ],
+            "P4": [
+              "U1:V−"
+            ],
+            "P5": [],
+            "P6": [],
+            "P7": [],
+            "P8": [
+              "U1:V+"
+            ]
+          }
+        },
+        "x": 7,
+        "y": 2,
+        "footprint": {
+          "key": "dip8-normal",
+          "orientation": "dip8-normal",
+          "width": 4,
+          "height": 4,
+          "pins": [
+            {
+              "logical": "P1",
+              "physical": "1",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "P2",
+              "physical": "2",
+              "x": 0,
+              "y": 1
+            },
+            {
+              "logical": "P3",
+              "physical": "3",
+              "x": 0,
+              "y": 2
+            },
+            {
+              "logical": "P4",
+              "physical": "4",
+              "x": 0,
+              "y": 3
+            },
+            {
+              "logical": "P5",
+              "physical": "5",
+              "x": 3,
+              "y": 3
+            },
+            {
+              "logical": "P6",
+              "physical": "6",
+              "x": 3,
+              "y": 2
+            },
+            {
+              "logical": "P7",
+              "physical": "7",
+              "x": 3,
+              "y": 1
+            },
+            {
+              "logical": "P8",
+              "physical": "8",
+              "x": 3,
+              "y": 0
+            }
+          ]
+        }
+      },
+      {
+        "componentId": "Q1",
+        "componentIdentity": "component:CMP-mvwpvpvv-gzk0zs",
+        "component": {
+          "id": "Q1",
+          "type": "transistor",
+          "transistorKind": "npn",
+          "value": "BC547",
+          "x": 500,
+          "y": 320,
+          "rotation": 0,
+          "instanceUid": "CMP-mvwpvpvv-gzk0zs"
+        },
+        "x": 0,
+        "y": 1,
+        "footprint": {
+          "key": "to92-flat-left-CBE",
+          "orientation": "to92-flat-left",
+          "width": 1,
+          "height": 3,
+          "pins": [
+            {
+              "logical": "C",
+              "physical": "C",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "B",
+              "physical": "B",
+              "x": 0,
+              "y": 1
+            },
+            {
+              "logical": "E",
+              "physical": "E",
+              "x": 0,
+              "y": 2
+            }
+          ]
+        }
+      },
+      {
+        "componentId": "D1",
+        "componentIdentity": "component:CMP-mvwpvpvv-319j8f",
+        "component": {
+          "id": "D1",
+          "type": "diode",
+          "value": "1N4148",
+          "x": 620,
+          "y": 160,
+          "rotation": 90,
+          "instanceUid": "CMP-mvwpvpvv-319j8f"
+        },
+        "x": 7,
+        "y": 1,
+        "footprint": {
+          "key": "horizontal-3-reversed",
+          "orientation": "horizontal",
+          "width": 4,
+          "height": 1,
+          "pins": [
+            {
+              "logical": "K",
+              "physical": "K",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "A",
+              "physical": "A",
+              "x": 3,
+              "y": 0
+            }
+          ]
+        }
+      },
+      {
+        "componentId": "R1",
+        "componentIdentity": "component:CMP-mvwpvpvv-jyy38p",
+        "component": {
+          "id": "R1",
+          "type": "resistor",
+          "value": "10kΩ",
+          "x": 300,
+          "y": 320,
+          "rotation": 0,
+          "instanceUid": "CMP-mvwpvpvv-jyy38p"
+        },
+        "x": 4,
+        "y": 2,
+        "footprint": {
+          "key": "vertical-4-reversed",
+          "orientation": "vertical",
+          "width": 1,
+          "height": 5,
+          "pins": [
+            {
+              "logical": "2",
+              "physical": "2",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "1",
+              "physical": "1",
+              "x": 0,
+              "y": 4
+            }
+          ]
+        }
+      },
+      {
+        "componentId": "R2",
+        "componentIdentity": "component:CMP-mvwpvpvv-l8jhwy",
+        "component": {
+          "id": "R2",
+          "type": "resistor",
+          "value": "100kΩ",
+          "x": 760,
+          "y": 560,
+          "rotation": 0,
+          "instanceUid": "CMP-mvwpvpvv-l8jhwy"
+        },
+        "x": 2,
+        "y": 0,
+        "footprint": {
+          "key": "vertical-4-reversed",
+          "orientation": "vertical",
+          "width": 1,
+          "height": 5,
+          "pins": [
+            {
+              "logical": "2",
+              "physical": "2",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "1",
+              "physical": "1",
+              "x": 0,
+              "y": 4
+            }
+          ]
+        }
+      },
+      {
+        "componentId": "C1",
+        "componentIdentity": "component:CMP-mvwpvpvv-3od0hj",
+        "component": {
+          "id": "C1",
+          "type": "capacitor",
+          "value": "100nF",
+          "x": 400,
+          "y": 500,
+          "rotation": 90,
+          "instanceUid": "CMP-mvwpvpvv-3od0hj"
+        },
+        "x": 1,
+        "y": 2,
+        "footprint": {
+          "key": "vertical-3-normal",
+          "orientation": "vertical",
+          "width": 1,
+          "height": 4,
+          "pins": [
+            {
+              "logical": "1",
+              "physical": "1",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "2",
+              "physical": "2",
+              "x": 0,
+              "y": 3
+            }
+          ]
+        }
+      },
+      {
+        "componentId": "C2",
+        "componentIdentity": "component:CMP-mvwpvpvv-j6htye",
+        "component": {
+          "id": "C2",
+          "type": "capacitorPolarized",
+          "value": "10µF",
+          "x": 1020,
+          "y": 500,
+          "rotation": 90,
+          "instanceUid": "CMP-mvwpvpvv-j6htye"
+        },
+        "x": 3,
+        "y": 0,
+        "footprint": {
+          "key": "vertical-5-normal",
+          "orientation": "vertical",
+          "width": 1,
+          "height": 6,
+          "pins": [
+            {
+              "logical": "+",
+              "physical": "+",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "−",
+              "physical": "−",
+              "x": 0,
+              "y": 5
+            }
+          ]
+        }
+      }
+    ],
+    "sourcePlacements": [
+      {
+        "componentId": "U1",
+        "componentIdentity": "opamp:OPKG-mvwpvpvv-zch3lt",
+        "component": {
+          "id": "U1",
+          "instanceUid": "OPKG-mvwpvpvv-zch3lt",
+          "opampPackageUid": "OPKG-mvwpvpvv-zch3lt",
+          "type": "opamp",
+          "value": "TL072",
+          "x": 800,
+          "y": 360,
+          "rotation": 0,
+          "opampKind": "double",
+          "opampSection": "A",
+          "opampBaseId": "U1",
+          "packagePins": 8,
+          "opampPackage": "DIP8",
+          "opampPinout": {
+            "1": "OUT A",
+            "2": "IN− A",
+            "3": "IN+ A",
+            "4": "V−",
+            "5": "IN+ B",
+            "6": "IN− B",
+            "7": "OUT B",
+            "8": "V+"
+          },
+          "boardMembers": [
+            "U1"
+          ],
+          "boardPinSources": {
+            "P1": [
+              "U1:OUT"
+            ],
+            "P2": [
+              "U1:IN−"
+            ],
+            "P3": [
+              "U1:IN+"
+            ],
+            "P4": [
+              "U1:V−"
+            ],
+            "P5": [],
+            "P6": [],
+            "P7": [],
+            "P8": [
+              "U1:V+"
+            ]
+          }
+        },
+        "x": 7,
+        "y": 2,
+        "footprint": {
+          "key": "dip8-normal",
+          "orientation": "dip8-normal",
+          "width": 4,
+          "height": 4,
+          "pins": [
+            {
+              "logical": "P1",
+              "physical": "1",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "P2",
+              "physical": "2",
+              "x": 0,
+              "y": 1
+            },
+            {
+              "logical": "P3",
+              "physical": "3",
+              "x": 0,
+              "y": 2
+            },
+            {
+              "logical": "P4",
+              "physical": "4",
+              "x": 0,
+              "y": 3
+            },
+            {
+              "logical": "P5",
+              "physical": "5",
+              "x": 3,
+              "y": 3
+            },
+            {
+              "logical": "P6",
+              "physical": "6",
+              "x": 3,
+              "y": 2
+            },
+            {
+              "logical": "P7",
+              "physical": "7",
+              "x": 3,
+              "y": 1
+            },
+            {
+              "logical": "P8",
+              "physical": "8",
+              "x": 3,
+              "y": 0
+            }
+          ]
+        }
+      },
+      {
+        "componentId": "Q1",
+        "componentIdentity": "component:CMP-mvwpvpvv-gzk0zs",
+        "component": {
+          "id": "Q1",
+          "type": "transistor",
+          "transistorKind": "npn",
+          "value": "BC547",
+          "x": 500,
+          "y": 320,
+          "rotation": 0,
+          "instanceUid": "CMP-mvwpvpvv-gzk0zs"
+        },
+        "x": 0,
+        "y": 1,
+        "footprint": {
+          "key": "to92-flat-left-CBE",
+          "orientation": "to92-flat-left",
+          "width": 1,
+          "height": 3,
+          "pins": [
+            {
+              "logical": "C",
+              "physical": "C",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "B",
+              "physical": "B",
+              "x": 0,
+              "y": 1
+            },
+            {
+              "logical": "E",
+              "physical": "E",
+              "x": 0,
+              "y": 2
+            }
+          ]
+        }
+      },
+      {
+        "componentId": "D1",
+        "componentIdentity": "component:CMP-mvwpvpvv-319j8f",
+        "component": {
+          "id": "D1",
+          "type": "diode",
+          "value": "1N4148",
+          "x": 620,
+          "y": 160,
+          "rotation": 90,
+          "instanceUid": "CMP-mvwpvpvv-319j8f"
+        },
+        "x": 7,
+        "y": 1,
+        "footprint": {
+          "key": "horizontal-3-reversed",
+          "orientation": "horizontal",
+          "width": 4,
+          "height": 1,
+          "pins": [
+            {
+              "logical": "K",
+              "physical": "K",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "A",
+              "physical": "A",
+              "x": 3,
+              "y": 0
+            }
+          ]
+        }
+      },
+      {
+        "componentId": "R1",
+        "componentIdentity": "component:CMP-mvwpvpvv-jyy38p",
+        "component": {
+          "id": "R1",
+          "type": "resistor",
+          "value": "10kΩ",
+          "x": 300,
+          "y": 320,
+          "rotation": 0,
+          "instanceUid": "CMP-mvwpvpvv-jyy38p"
+        },
+        "x": 4,
+        "y": 2,
+        "footprint": {
+          "key": "vertical-4-reversed",
+          "orientation": "vertical",
+          "width": 1,
+          "height": 5,
+          "pins": [
+            {
+              "logical": "2",
+              "physical": "2",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "1",
+              "physical": "1",
+              "x": 0,
+              "y": 4
+            }
+          ]
+        }
+      },
+      {
+        "componentId": "R2",
+        "componentIdentity": "component:CMP-mvwpvpvv-l8jhwy",
+        "component": {
+          "id": "R2",
+          "type": "resistor",
+          "value": "100kΩ",
+          "x": 760,
+          "y": 560,
+          "rotation": 0,
+          "instanceUid": "CMP-mvwpvpvv-l8jhwy"
+        },
+        "x": 2,
+        "y": 0,
+        "footprint": {
+          "key": "vertical-4-reversed",
+          "orientation": "vertical",
+          "width": 1,
+          "height": 5,
+          "pins": [
+            {
+              "logical": "2",
+              "physical": "2",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "1",
+              "physical": "1",
+              "x": 0,
+              "y": 4
+            }
+          ]
+        }
+      },
+      {
+        "componentId": "C1",
+        "componentIdentity": "component:CMP-mvwpvpvv-3od0hj",
+        "component": {
+          "id": "C1",
+          "type": "capacitor",
+          "value": "100nF",
+          "x": 400,
+          "y": 500,
+          "rotation": 90,
+          "instanceUid": "CMP-mvwpvpvv-3od0hj"
+        },
+        "x": 1,
+        "y": 2,
+        "footprint": {
+          "key": "vertical-3-normal",
+          "orientation": "vertical",
+          "width": 1,
+          "height": 4,
+          "pins": [
+            {
+              "logical": "1",
+              "physical": "1",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "2",
+              "physical": "2",
+              "x": 0,
+              "y": 3
+            }
+          ]
+        }
+      },
+      {
+        "componentId": "C2",
+        "componentIdentity": "component:CMP-mvwpvpvv-j6htye",
+        "component": {
+          "id": "C2",
+          "type": "capacitorPolarized",
+          "value": "10µF",
+          "x": 1020,
+          "y": 500,
+          "rotation": 90,
+          "instanceUid": "CMP-mvwpvpvv-j6htye"
+        },
+        "x": 3,
+        "y": 0,
+        "footprint": {
+          "key": "vertical-5-normal",
+          "orientation": "vertical",
+          "width": 1,
+          "height": 6,
+          "pins": [
+            {
+              "logical": "+",
+              "physical": "+",
+              "x": 0,
+              "y": 0
+            },
+            {
+              "logical": "−",
+              "physical": "−",
+              "x": 0,
+              "y": 5
+            }
+          ]
+        }
+      }
+    ],
+    "routes": [
+      {
+        "node": "9V link 1",
+        "fromSegment": "M6",
+        "toSegment": "M3",
+        "isRoutingBusLink": false,
+        "schematicNetIndex": 1,
+        "schematicNetIdentity": "[\"component:CMP-mvwpvpvv-319j8f:A\",\"component:CMP-mvwpvpvv-5tytc2:1\",\"opamp:OPKG-mvwpvpvv-zch3lt:A:V+\"]",
+        "netName": "9V",
+        "points": [
+          {
+            "x": 11,
+            "y": 2
+          },
+          {
+            "x": 11,
+            "y": 1
+          }
+        ]
+      },
+      {
+        "node": "9V link 2",
+        "fromSegment": "M6",
+        "toSegment": "M15",
+        "isRoutingBusLink": true,
+        "schematicNetIndex": 1,
+        "schematicNetIdentity": "[\"component:CMP-mvwpvpvv-319j8f:A\",\"component:CMP-mvwpvpvv-5tytc2:1\",\"opamp:OPKG-mvwpvpvv-zch3lt:A:V+\"]",
+        "netName": "9V",
+        "points": [
+          {
+            "x": 9,
+            "y": 2
+          },
+          {
+            "x": 9,
+            "y": 7
+          }
+        ]
+      },
+      {
+        "node": "9V link 3",
+        "fromSegment": "M13",
+        "toSegment": "M15",
+        "isRoutingBusLink": true,
+        "schematicNetIndex": 1,
+        "schematicNetIdentity": "[\"component:CMP-mvwpvpvv-319j8f:A\",\"component:CMP-mvwpvpvv-5tytc2:1\",\"opamp:OPKG-mvwpvpvv-zch3lt:A:V+\"]",
+        "netName": "9V",
+        "points": [
+          {
+            "x": 1,
+            "y": 6
+          },
+          {
+            "x": 1,
+            "y": 7
+          }
+        ]
+      },
+      {
+        "node": "OUTPUT link 4",
+        "fromSegment": "M1",
+        "toSegment": "M5",
+        "isRoutingBusLink": false,
+        "schematicNetIndex": 3,
+        "schematicNetIdentity": "[\"component:CMP-mvwpvpvv-j6htye:+\",\"component:CMP-mvwpvpvv-l8jhwy:2\",\"component:CMP-mvwpvpvv-r27nbf:1\",\"opamp:OPKG-mvwpvpvv-zch3lt:A:OUT\"]",
+        "netName": "OUTPUT",
+        "points": [
+          {
+            "x": 6,
+            "y": 0
+          },
+          {
+            "x": 6,
+            "y": 2
+          }
+        ]
+      }
+    ],
+    "cuts": [
+      {
+        "x": 5,
+        "y": 2,
+        "hole": 5
+      },
+      {
+        "x": 8,
+        "y": 2,
+        "hole": 8
+      },
+      {
+        "x": 8,
+        "y": 3,
+        "hole": 8
+      },
+      {
+        "x": 8,
+        "y": 4,
+        "hole": 8
+      },
+      {
+        "x": 8,
+        "y": 5,
+        "hole": 8
+      },
+      {
+        "x": 8,
+        "y": 1,
+        "hole": 8
+      },
+      {
+        "x": 2,
+        "y": 6,
+        "hole": 2
+      }
+    ],
+    "terminals": [
+      {
+        "componentId": "P2",
+        "componentIdentity": "component:CMP-mvwpvpvv-5tytc2",
+        "component": {
+          "id": "P2",
+          "type": "terminal",
+          "value": "9V",
+          "x": 620,
+          "y": 80,
+          "rotation": 270,
+          "instanceUid": "CMP-mvwpvpvv-5tytc2",
+          "netScope": "offboard"
+        },
+        "schematicNetIndex": 1,
+        "schematicNetIdentity": "[\"component:CMP-mvwpvpvv-319j8f:A\",\"component:CMP-mvwpvpvv-5tytc2:1\",\"opamp:OPKG-mvwpvpvv-zch3lt:A:V+\"]",
+        "netName": "9V",
+        "side": "left",
+        "row": 6,
+        "pinName": "1",
+        "pinNames": [
+          "1"
+        ],
+        "controlName": "",
+        "isGroupedPotentiometerPins": false,
+        "labelOffset": 0,
+        "isOffboardControl": false,
+        "key": "P2",
+        "label": "9V"
+      },
+      {
+        "componentId": "P3",
+        "componentIdentity": "component:CMP-mvwpvpvv-r27nbf",
+        "component": {
+          "id": "P3",
+          "type": "terminal",
+          "value": "OUTPUT",
+          "x": 1080,
+          "y": 360,
+          "rotation": 0,
+          "instanceUid": "CMP-mvwpvpvv-r27nbf",
+          "netScope": "offboard"
+        },
+        "schematicNetIndex": 3,
+        "schematicNetIdentity": "[\"component:CMP-mvwpvpvv-j6htye:+\",\"component:CMP-mvwpvpvv-l8jhwy:2\",\"component:CMP-mvwpvpvv-r27nbf:1\",\"opamp:OPKG-mvwpvpvv-zch3lt:A:OUT\"]",
+        "netName": "OUTPUT",
+        "side": "right",
+        "row": 0,
+        "pinName": "1",
+        "pinNames": [
+          "1"
+        ],
+        "controlName": "",
+        "isGroupedPotentiometerPins": false,
+        "labelOffset": 0,
+        "isOffboardControl": false,
+        "key": "P3",
+        "label": "OUTPUT"
+      },
+      {
+        "componentId": "P4",
+        "componentIdentity": "component:CMP-mvwpvpvv-11s7gh",
+        "component": {
+          "id": "P4",
+          "type": "terminal",
+          "value": "GND",
+          "x": 400,
+          "y": 660,
+          "rotation": 90,
+          "instanceUid": "CMP-mvwpvpvv-11s7gh",
+          "netScope": "offboard"
+        },
+        "schematicNetIndex": 0,
+        "schematicNetIdentity": "[\"component:CMP-mvwpvpvv-11s7gh:1\",\"component:CMP-mvwpvpvv-3od0hj:2\",\"component:CMP-mvwpvpvv-j6htye:−\",\"component:CMP-mvwpvpvv-v5ynsh:1\",\"opamp:OPKG-mvwpvpvv-zch3lt:A:V−\"]",
+        "netName": "GND",
+        "side": "left",
+        "row": 5,
+        "pinName": "1",
+        "pinNames": [
+          "1"
+        ],
+        "controlName": "",
+        "isGroupedPotentiometerPins": false,
+        "labelOffset": 0,
+        "isOffboardControl": false,
+        "key": "P4",
+        "label": "GND"
+      },
+      {
+        "componentId": "P1",
+        "componentIdentity": "component:CMP-mvwpvpvv-2o0qju",
+        "component": {
+          "id": "P1",
+          "type": "terminal",
+          "value": "INPUT",
+          "x": 120,
+          "y": 320,
+          "rotation": 0,
+          "instanceUid": "CMP-mvwpvpvv-2o0qju",
+          "netScope": "offboard"
+        },
+        "schematicNetIndex": 2,
+        "schematicNetIdentity": "[\"component:CMP-mvwpvpvv-2o0qju:1\",\"component:CMP-mvwpvpvv-jyy38p:1\"]",
+        "netName": "INPUT",
+        "side": "right",
+        "row": 6,
+        "pinName": "1",
+        "pinNames": [
+          "1"
+        ],
+        "controlName": "",
+        "isGroupedPotentiometerPins": false,
+        "labelOffset": 0,
+        "isOffboardControl": false,
+        "key": "P1",
+        "label": "INPUT"
+      }
+    ],
+    "autoDescriptionLines": [
+      "U1 is TL072",
+      "Q1 is BC547",
+      "D1 is 1N4148"
+    ],
+    "schematicStructureSignature": "{\"components\":[{\"identity\":\"component:CMP-mvwpvpvv-11s7gh\",\"type\":\"terminal\",\"pins\":[\"1\"],\"scope\":\"offboard\"},{\"identity\":\"component:CMP-mvwpvpvv-2o0qju\",\"type\":\"terminal\",\"pins\":[\"1\"],\"scope\":\"offboard\"},{\"identity\":\"component:CMP-mvwpvpvv-319j8f\",\"type\":\"diode\",\"pins\":[\"A\",\"K\"]},{\"identity\":\"component:CMP-mvwpvpvv-3od0hj\",\"type\":\"capacitor\",\"pins\":[\"1\",\"2\"]},{\"identity\":\"component:CMP-mvwpvpvv-5tytc2\",\"type\":\"terminal\",\"pins\":[\"1\"],\"scope\":\"offboard\"},{\"identity\":\"component:CMP-mvwpvpvv-gzk0zs\",\"type\":\"transistor\",\"pins\":[\"B\",\"C\",\"E\"],\"transistorKind\":\"npn\",\"leadOrder\":[\"C\",\"B\",\"E\"]},{\"identity\":\"component:CMP-mvwpvpvv-j6htye\",\"type\":\"capacitorPolarized\",\"pins\":[\"+\",\"−\"]},{\"identity\":\"component:CMP-mvwpvpvv-jyy38p\",\"type\":\"resistor\",\"pins\":[\"1\",\"2\"]},{\"identity\":\"component:CMP-mvwpvpvv-l8jhwy\",\"type\":\"resistor\",\"pins\":[\"1\",\"2\"]},{\"identity\":\"component:CMP-mvwpvpvv-r27nbf\",\"type\":\"terminal\",\"pins\":[\"1\"],\"scope\":\"offboard\"},{\"identity\":\"component:CMP-mvwpvpvv-v5ynsh\",\"type\":\"terminal\",\"pins\":[\"1\"],\"scope\":\"offboard\"},{\"identity\":\"opamp:OPKG-mvwpvpvv-zch3lt:A\",\"type\":\"opamp\",\"pins\":[\"IN−\",\"IN+\",\"OUT\",\"V+\",\"V−\"],\"opampKind\":\"double\",\"section\":\"A\",\"model\":\"TL072\"}],\"wires\":[\"component:CMP-mvwpvpvv-11s7gh:1|component:CMP-mvwpvpvv-3od0hj:2\",\"component:CMP-mvwpvpvv-11s7gh:1|opamp:OPKG-mvwpvpvv-zch3lt:A:V−\",\"component:CMP-mvwpvpvv-2o0qju:1|component:CMP-mvwpvpvv-jyy38p:1\",\"component:CMP-mvwpvpvv-319j8f:A|component:CMP-mvwpvpvv-5tytc2:1\",\"component:CMP-mvwpvpvv-319j8f:K|component:CMP-mvwpvpvv-gzk0zs:C\",\"component:CMP-mvwpvpvv-3od0hj:1|component:CMP-mvwpvpvv-jyy38p:2\",\"component:CMP-mvwpvpvv-5tytc2:1|opamp:OPKG-mvwpvpvv-zch3lt:A:V+\",\"component:CMP-mvwpvpvv-gzk0zs:B|component:CMP-mvwpvpvv-jyy38p:2\",\"component:CMP-mvwpvpvv-gzk0zs:E|opamp:OPKG-mvwpvpvv-zch3lt:A:IN−\",\"component:CMP-mvwpvpvv-j6htye:+|opamp:OPKG-mvwpvpvv-zch3lt:A:OUT\",\"component:CMP-mvwpvpvv-j6htye:−|component:CMP-mvwpvpvv-v5ynsh:1\",\"component:CMP-mvwpvpvv-l8jhwy:1|opamp:OPKG-mvwpvpvv-zch3lt:A:IN+\",\"component:CMP-mvwpvpvv-l8jhwy:2|opamp:OPKG-mvwpvpvv-zch3lt:A:OUT\",\"component:CMP-mvwpvpvv-r27nbf:1|opamp:OPKG-mvwpvpvv-zch3lt:A:OUT\"]}",
+    "manualEdited": false
+  }
+}

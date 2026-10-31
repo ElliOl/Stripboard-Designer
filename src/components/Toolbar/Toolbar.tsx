@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useStripboardStore } from '@/store/stripboard';
 import { parseKiCadNetlist, isVirtualRef, type ParsedNetlist } from '@/lib/netlist-parser';
+import { isVeroProject, convertVeroProject } from '@/lib/vero-import';
 import type { ToolType, NetlistImportOptions } from '@/lib/types';
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { NetlistImportDialog } from '@/components/NetlistImportDialog';
@@ -43,6 +44,7 @@ export const Toolbar = () => {
     importProject,
     importNetlistWithOptions,
     components,
+    componentDefinitions,
     layerVisibility,
     toggleLayer,
   } = useStripboardStore();
@@ -127,12 +129,27 @@ export const Toolbar = () => {
       if (!file) return;
       const reader = new FileReader();
       reader.onload = (ev) => {
+        let data: unknown;
         try {
-          const data = JSON.parse(ev.target?.result as string);
-          importProject(data);
+          data = JSON.parse(ev.target?.result as string);
         } catch {
           console.error('Failed to import project');
+          return;
         }
+        // Vero Designer projects are converted to a board on the fly
+        if (isVeroProject(data)) {
+          try {
+            const { project, notes } = convertVeroProject(data, componentDefinitions);
+            importProject(project);
+            if (notes.length) {
+              alert(`Imported Vero Designer layout.\n\nOff-board wiring:\n${notes.join('\n')}`);
+            }
+          } catch (err) {
+            alert(err instanceof Error ? err.message : 'Could not import this Vero Designer project.');
+          }
+          return;
+        }
+        importProject(data as Parameters<typeof importProject>[0]);
       };
       reader.readAsText(file);
     };
@@ -288,7 +305,7 @@ export const Toolbar = () => {
         <ToolBtn
           icon={Upload}
           onClick={handleImport}
-          title="Import Project (.json)"
+          title="Open Project (.json, Stripboard Designer or Vero Designer)"
           size={15}
         />
         <ToolBtn

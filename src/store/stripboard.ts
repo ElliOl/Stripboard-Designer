@@ -29,6 +29,7 @@ import {
 } from '@/lib/netlist-parser';
 import { createGenericDefinition, createDefinitionFromPlacements } from '@/lib/component-utils';
 import { clusterComponentsByConnectivity } from '@/lib/component-clustering';
+import { NET_COLORS } from '@/lib/net-colors';
 
 /**
  * Determine the default rotation for a component.
@@ -39,13 +40,10 @@ function getDefaultRotation(_definition: ComponentDefinition): 0 | 90 | 180 | 27
   return 90;
 }
 
-const NET_COLORS = [
-  '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e',
-  '#14b8a6', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6',
-  '#a855f7', '#d946ef', '#ec4899', '#f43f5e',
-];
-
 const MAX_HISTORY = 50;
+
+/** Initial canvas offset: clears the floating toolbar so column 0 stays visible */
+const DEFAULT_PAN = { x: 100, y: 60 };
 
 /** Generate one full-width copper strip per row (real stripboard has continuous strips) */
 function generateStrips(rows: number, cols: number, existingBreaks?: Map<number, number[]>, pcbId?: string): Strip[] {
@@ -262,7 +260,7 @@ const initialState: StripboardState = {
   ratsnestColorMode: 'colored', // Default to colored ratsnest lines
   componentOpacity: 1.0, // Default to fully opaque components
   zoom: 1,
-  pan: { x: 60, y: 60 },
+  pan: { ...DEFAULT_PAN },
   performanceMode: 'auto', // Auto-detect and adapt to device performance
   realtimeRatsnest: true, // Enable real-time ratsnest updates
   importReport: null,
@@ -1363,6 +1361,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       componentDefinitions: mergedDefinitions,
       selectedItems: [],
       importReport: data.importReport ?? null, // Restore saved import report
+      pan: { ...DEFAULT_PAN }, // Show the opened board from its top-left corner
       past: [],
       future: [],
     });
