@@ -329,7 +329,7 @@ describe('history and moving', () => {
 });
 
 describe('undo snapshot', () => {
-  it('restores componentDefinitions and stripColor', () => {
+  it('restores componentDefinitions but leaves the strip colour alone', () => {
     const st = useStripboardStore;
     st.getState().reset();
     const before = st.getState().componentDefinitions.length;
@@ -340,6 +340,6 @@ describe('undo snapshot', () => {
     });
     st.getState().undo();
     expect(st.getState().componentDefinitions).toHaveLength(before);
-    expect(st.getState().stripColor).not.toBe('#abcdef');
+    expect(st.getState().stripColor).toBe('#abcdef');
   });
 });

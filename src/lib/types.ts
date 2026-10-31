@@ -185,7 +185,6 @@ export type HistoryEntry = {
   netGroups: NetGroup[];
   referenceImages: ReferenceImageState[];
   componentDefinitions: ComponentDefinition[];
-  stripColor: string;
 };
 
 export type ProjectData = {

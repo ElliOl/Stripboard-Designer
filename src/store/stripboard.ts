@@ -109,7 +109,7 @@ const getSnapshot = (state: StripboardState): HistoryEntry => ({
   referenceImages: [...state.referenceImages],
   // Definitions are immutable objects, so a shallow copy is enough
   componentDefinitions: [...state.componentDefinitions],
-  stripColor: state.stripColor,
+  // stripColor is a display preference, not an edit, so undo leaves it alone
 });
 
 interface StripboardStore extends StripboardState {
