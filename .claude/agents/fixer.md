@@ -11,6 +11,7 @@ How you work:
 - Write or update tests for what you change, in `tests/` (vitest, `npm test`). Make tests fail before your fix where practical.
 - Other fixers may be editing other files in the same checkout at the same time. When `tsc` or `lint` errors point at files outside your list, mention them and move on.
 - Do not commit, push, switch branches, stash or otherwise change git state.
+- Follow "Safe editing" in `CLAUDE.md`: exact-match edits only, no scripted whole-file rewrites, check `git diff --stat` after editing, and never restore files from git. If you break a file, stop and report it.
 - Keep to the surrounding code's style. Make no unrelated refactors.
 
 Finish with a short report:

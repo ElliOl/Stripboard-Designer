@@ -27,6 +27,8 @@ Your brief names a feature, the area of the code you own, and what "done" looks 
 
 Other agents may be working in the same checkout. Edit only the files in your area. Do not commit, push, switch branches or otherwise change git state.
 
+Follow "Safe editing" in `CLAUDE.md`: exact-match edits only, no scripted whole-file rewrites, check `git diff --stat` after editing, and never restore files from git. If you break a file, stop and report it.
+
 ## Report
 
 Finish with:

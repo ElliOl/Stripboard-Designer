@@ -14,6 +14,13 @@ Stripboard Designer is a browser app for laying out stripboard (Veroboard) circu
 
 **Models.** Subagents run on Sonnet. Use Opus only when a task genuinely needs it, and ask the owner first.
 
+## Safe editing (all agents)
+
+- **Edit with exact-match replacements** (the Edit tool, or a `sed` that changes one known line). Never rewrite or splice a file with an ad-hoc script that matches by position, a brace count or a broad regex. Never reformat a whole file.
+- **Check every edit.** After editing, run `git diff --stat`. If a file changed far more than you intended, stop and report it.
+- **Never restore a file from git** (`git checkout`, `git restore`, `git show HEAD:file > file`). That can silently wipe work that isn't yours. If you break a file, stop and report it; the orchestrator recovers it.
+- **Orchestrator:** commit a checkpoint before dispatching agents. Give each agent that writes code its own git worktree (`isolation: "worktree"`), review its diff before merging, and keep file ownership non-overlapping.
+
 ## Done criteria
 
 A change is done when all of these pass:
