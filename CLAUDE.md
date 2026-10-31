@@ -19,7 +19,11 @@ Stripboard Designer is a browser app for laying out stripboard (Veroboard) circu
 - **Edit with exact-match replacements** (the Edit tool, or a `sed` that changes one known line). Never rewrite or splice a file with an ad-hoc script that matches by position, a brace count or a broad regex. Never reformat a whole file.
 - **Check every edit.** After editing, run `git diff --stat`. If a file changed far more than you intended, stop and report it.
 - **Never restore a file from git** (`git checkout`, `git restore`, `git show HEAD:file > file`). That can silently wipe work that isn't yours. If you break a file, stop and report it; the orchestrator recovers it.
-- **Orchestrator:** commit a checkpoint before dispatching agents. Give each agent that writes code its own git worktree (`isolation: "worktree"`), review its diff before merging, and keep file ownership non-overlapping.
+- **Orchestrator:** commit a checkpoint before dispatching agents. Give each agent that writes code its own git worktree, review its diff before merging, and keep file ownership non-overlapping.
+  - Don't use the Agent tool's `isolation: "worktree"`, because it branches from `main` rather than the working branch.
+  - Create the worktree yourself: `git worktree add -b <branch> ../worktrees/<name> <working-branch>`.
+  - Symlink `node_modules` from the main checkout.
+  - Point the agent at that absolute path. The agent commits only on its own branch.
 
 ## Done criteria
 
