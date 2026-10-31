@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
-import { boardFromNetlist } from './autolayout-helpers';
+import { BOOSTER, boardFromNetlist } from './autolayout-helpers';
 import { adaptBoardToVero } from '@/lib/autolayout/adapter';
 import {
   enlargeBoardSize,
@@ -16,10 +16,7 @@ const adapt = (text: string) => {
   return adaptBoardToVero(b.components, b.nets, b.definitions).circuit;
 };
 
-const booster = () => {
-  const src = readFileSync(new URL('./autolayout.test.ts', import.meta.url), 'utf8');
-  return /const BOOSTER = `([\s\S]*?)`;/.exec(src)![1];
-};
+const booster = () => BOOSTER;
 
 describe('board size estimate', () => {
   it('keeps a small circuit at the old default', () => {

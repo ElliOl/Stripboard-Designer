@@ -15,7 +15,7 @@ export type AutoLayoutSettings = {
 
 export type RunResult =
   | { ok: true; project: VeroProject; shorts: number; disconnectedNets: number }
-  | { ok: false; error: string };
+  | { ok: false; error: string; cancelled?: true };
 
 export async function runVeroEngine(
   circuit: AutoLayoutCircuit,

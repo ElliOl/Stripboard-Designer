@@ -136,9 +136,42 @@ function fixedPart(
   };
 }
 
+/** Ids this file recognises by prefix; anything else is classified from its footprint name */
+const KNOWN_ID = /^(?:mcu-|potentiometer|trimpot|encoder|resistor|capacitor|electrolytic|zener-diode|diode|led|transistor|jfet|mosfet|header|connector|switch|button|regulator|inductor)/;
+
+/**
+ * The library id a definition id was derived from. Auto layout, pin drags and the
+ * edit dialog all make new ids by adding a `vero-` prefix or a `-custom-...` suffix
+ * (the same convention getComponentSubtype relies on).
+ */
+export function baseDefinitionId(id: string): string {
+  return id.replace(/^vero-/, '').replace(/-custom-.*$/, '');
+}
+
+/** Part kind from a KiCad footprint name, as a library-style id, or '' */
+function idFromFootprint(footprint: string): string {
+  if (/(?:^|[:_])CP_|Capacitor_THT:CP|elec/i.test(footprint)) return 'electrolytic';
+  if (/(?:^|[:_])C_|Capacitor/i.test(footprint)) return 'capacitor';
+  if (/(?:^|[:_])R_|Resistor/i.test(footprint)) return 'resistor';
+  if (/LED/i.test(footprint)) return 'led';
+  if (/(?:^|[:_])D_|Diode/i.test(footprint)) return 'diode';
+  if (/TO-?92/i.test(footprint)) return 'transistor';
+  return '';
+}
+
+/** Edge pads made by an earlier Auto layout */
+export const isEdgePad = (component: Component) => /^vero-pad-/.test(component.definitionId);
+
 function classify(component: Component, def: ComponentDefinition | undefined, netOf: NetOf): Classification {
-  const footprint = component.footprint ?? '';
-  const id = def?.id ?? '';
+  let footprint = component.footprint ?? '';
+  const base = baseDefinitionId(def?.id ?? component.definitionId);
+  // A derived id that does not start with a known kind is classified from the footprint name
+  const id = KNOWN_ID.test(base) ? base : idFromFootprint(footprint) || base;
+  // A header made by an earlier Auto layout has no KiCad footprint name: it is a single column of pins
+  if (!footprint && id.startsWith('header') && def && def.pins.length > 1 && def.pins.every((p) => p.position.col === def.pins[0].position.col)) {
+    footprint = `PinHeader_1x${def.pins.length}_P2.54mm_Vertical`;
+  }
+  if (!footprint && id.startsWith('mcu-module') && def?.pins.length === 30) footprint = 'Arduino_Nano';
   const value = component.value ?? '';
   const numbers = (def?.pins ?? component.pins).map((p) => p.number);
 
@@ -226,7 +259,7 @@ function classify(component: Component, def: ComponentDefinition | undefined, ne
       },
     };
   }
-  if (id === 'led') {
+  if (id === 'led' || id.startsWith('led-')) {
     return {
       mapped: {
         record: { type: 'led', value, ledScope: 'onboard', ledColor: 'red' },
@@ -234,7 +267,7 @@ function classify(component: Component, def: ComponentDefinition | undefined, ne
       },
     };
   }
-  if (id === 'transistor' || id === 'transistor-npn' || id === 'transistor-pnp' || id === 'jfet' || id === 'mosfet-to92') {
+  if (id.startsWith('transistor') || id === 'jfet' || id === 'mosfet-to92') {
     return { mapped: transistorMapping(def, component) };
   }
   if (def.footprint.type === 'DIP' && def.category === 'IC' && GENERIC_IC_PIN_COUNTS.includes(def.pins.length)) {
@@ -301,6 +334,16 @@ export function adaptBoardToVero(
 
   const ordered = [...components].sort((a, b) => a.position.row - b.position.row || a.position.col - b.position.col);
   for (const component of ordered) {
+    // Edge pads are Auto layout's own output from an earlier run: keep each as a pad for its net
+    if (isEdgePad(component)) {
+      for (const pin of component.pins) {
+        if (!pin.netId || !netById.has(pin.netId)) continue;
+        const list = offboardByNet.get(pin.netId) ?? [];
+        list.push(`${component.reference} (edge pad from the previous layout)`);
+        offboardByNet.set(pin.netId, list);
+      }
+      continue;
+    }
     const def = defById.get(component.definitionId);
     const pinNet = new Map(component.pins.filter((p) => p.netId && netById.has(p.netId)).map((p) => [p.number, p.netId!]));
     const result = classify(component, def, (pin) => pinNet.get(pin));

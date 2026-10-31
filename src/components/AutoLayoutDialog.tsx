@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Wand2, Loader2 } from 'lucide-react';
 import { useStripboardStore } from '@/store/stripboard';
 import { adaptBoardToVero } from '@/lib/autolayout/adapter';
+import { applyLayout, mainPcbComponents } from '@/lib/autolayout/apply';
 import { startAutoLayout, type AutoLayoutJob } from '@/lib/autolayout/client';
 import { layoutToBoard } from '@/lib/autolayout/to-board';
 import {
@@ -33,11 +34,21 @@ const clampInt = (value: string, min: number, max: number, fallback: number) => 
   return Number.isFinite(n) && value !== '' ? Math.min(max, Math.max(min, n)) : fallback;
 };
 
+/** Note shown when a typed size is outside what the router accepts */
+const clampNote = (value: string, min: number, max: number, fallback: number, label: string) => {
+  if (value === '' || !Number.isFinite(Number(value))) return null;
+  const used = clampInt(value, min, max, fallback);
+  return used === Math.round(Number(value)) ? null : `${label}: ${used} will be used (allowed ${min} to ${max}).`;
+};
+
 export const AutoLayoutDialog = ({ onClose }: AutoLayoutDialogProps) => {
-  const components = useStripboardStore((s) => s.components);
+  const allComponents = useStripboardStore((s) => s.components);
+  const pcbs = useStripboardStore((s) => s.pcbs);
   const nets = useStripboardStore((s) => s.nets);
   const definitions = useStripboardStore((s) => s.componentDefinitions);
 
+  // Only the main PCB is laid out; parts on other PCBs are left alone
+  const components = useMemo(() => mainPcbComponents(allComponents, pcbs), [allComponents, pcbs]);
   const adapted = useMemo(() => adaptBoardToVero(components, nets, definitions), [components, nets, definitions]);
   const onBoard = onBoardParts(adapted.circuit).length;
   // Start from a size that suits the circuit; the user can change it
@@ -75,6 +86,9 @@ export const AutoLayoutDialog = ({ onClose }: AutoLayoutDialogProps) => {
           maxColumns: clampInt(maxColumns, MIN_COLUMNS, MAX_COLUMNS, estimate.columns),
           maxRows: clampInt(maxRows, MIN_ROWS, MAX_ROWS, estimate.rows),
         };
+    // Show the value that is actually used
+    setMaxColumns(String(settings.maxColumns));
+    setMaxRows(String(settings.maxRows));
     setPhase({ name: 'running', progress: 'Starting…' });
     const started = startAutoLayout(adapted.circuit, settings, (progress) =>
       setPhase({ name: 'running', progress })
@@ -95,24 +109,14 @@ export const AutoLayoutDialog = ({ onClose }: AutoLayoutDialogProps) => {
       const state = useStripboardStore.getState();
       const board = layoutToBoard(result.project, adapted, state.nets, state.componentDefinitions);
       const { project } = board;
+      const applied = applyLayout(state, project);
+      if (!applied.ok) {
+        setPhase({ name: 'error', message: applied.error });
+        return;
+      }
       // One undoable step
       state.saveToHistory();
-      const known = new Set(state.componentDefinitions.map((d) => d.id));
-      useStripboardStore.setState({
-        rows: project.board.rows,
-        cols: project.board.cols,
-        pcbs: state.pcbs.map((p) =>
-          p.isMain ? { ...p, rows: project.board.rows, cols: project.board.cols } : p
-        ),
-        components: project.components,
-        strips: [...project.strips, ...state.strips.filter((s) => s.pcbId)],
-        wires: project.wires,
-        componentDefinitions: [
-          ...state.componentDefinitions,
-          ...(project.customDefinitions ?? []).filter((d) => !known.has(d.id)),
-        ],
-        selectedItems: [],
-      });
+      useStripboardStore.setState({ ...applied.patch, selectedItems: [] });
       const warnings = [...board.warnings];
       if (result.shorts) warnings.push(`The router reported ${result.shorts} short(s).`);
       if (result.disconnectedNets) warnings.push(`The router reported ${result.disconnectedNets} unconnected net(s).`);
@@ -215,6 +219,13 @@ export const AutoLayoutDialog = ({ onClose }: AutoLayoutDialogProps) => {
                   />
                 </label>
               </div>
+              {[
+                clampNote(maxColumns, MIN_COLUMNS, MAX_COLUMNS, estimate.columns, 'Max columns'),
+                clampNote(maxRows, MIN_ROWS, MAX_ROWS, estimate.rows, 'Max rows'),
+              ].map((note) => note && <p key={note}>{note}</p>)}
+              {pcbs.length > 1 && (
+                <p>Only the main PCB is laid out. Parts and links on other PCBs are left as they are.</p>
+              )}
               {onBoard > LARGE_CIRCUIT_PARTS && (
                 <p>Large circuits can take a few minutes to lay out.</p>
               )}

@@ -35,6 +35,7 @@ export function layoutToBoard(
       id: source.id,
       reference: source.reference,
       value: source.value,
+      ...(source.footprint ? { footprint: source.footprint } : {}),
       ...(source.ledColor ? { ledColor: source.ledColor } : {}),
       ...(source.color ? { color: source.color } : {}),
     };

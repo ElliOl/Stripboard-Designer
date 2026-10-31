@@ -2,7 +2,7 @@
 // GENERATED FILE - do not edit.
 //
 // Vero Designer's Compact (x+y) autorouter, extracted from
-//   ../VeroDesigner/index.html
+//   VeroDesigner/index.html (sha256 f0cc1fafda9c, 1549475 bytes)
 // Vero Designer is by blazethablunt (https://github.com/blazethablunt/VeroDesigner),
 // used here with the author's permission. The declarations below are copied
 // verbatim from Vero Designer; only the wrapper around them is new.

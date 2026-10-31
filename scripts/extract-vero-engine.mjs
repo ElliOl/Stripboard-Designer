@@ -6,6 +6,7 @@
 // through the IIFE's top-level declarations, and writes the result as a
 // factory `createVeroEngine(env)` with the declarations copied verbatim.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as acorn from 'acorn';
@@ -125,7 +126,7 @@ const output = `/* eslint-disable */
 // GENERATED FILE - do not edit.
 //
 // Vero Designer's Compact (x+y) autorouter, extracted from
-//   ${input.split('/').slice(-3).join('/')}
+//   VeroDesigner/index.html (sha256 ${createHash('sha256').update(html).digest('hex').slice(0, 12)}, ${Buffer.byteLength(html)} bytes)
 // Vero Designer is by blazethablunt (https://github.com/blazethablunt/VeroDesigner),
 // used here with the author's permission. The declarations below are copied
 // verbatim from Vero Designer; only the wrapper around them is new.
