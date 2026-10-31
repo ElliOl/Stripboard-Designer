@@ -24,7 +24,7 @@ describe('autosave', () => {
 
   it('saves and restores the project', () => {
     const map = installStorage();
-    useStripboardStore.setState({ wires: [{ id: 'w1', from: { row: 0, col: 0 }, to: { row: 1, col: 1 } } as never] });
+    useStripboardStore.setState({ wires: [{ id: 'w1', netId: 'n', points: [{ row: 0, col: 0 }, { row: 1, col: 1 }] }] });
     saveAutosave();
     expect(map.has(AUTOSAVE_KEY)).toBe(true);
     useStripboardStore.getState().reset();
@@ -72,5 +72,29 @@ describe('autosave', () => {
     clearAutosave();
     expect(map.has(AUTOSAVE_KEY)).toBe(false);
     stop();
+  });
+
+  it('does not crash on a malformed autosave and sets it aside', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const map = installStorage();
+    map.set(AUTOSAVE_KEY, '{"components":"abc"}');
+    expect(restoreAutosave()).toBe(false);
+    expect(map.has(AUTOSAVE_KEY)).toBe(false);
+    expect(map.get('stripboard-designer:autosave-backup')).toBe('{"components":"abc"}');
+  });
+
+  it('flushes a pending save when the page is hidden', () => {
+    vi.useFakeTimers();
+    const map = installStorage();
+    const target = new EventTarget();
+    vi.stubGlobal('window', target);
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    const stop = startAutosave();
+    useStripboardStore.setState({ stripColor: '#123456' });
+    expect(map.has(AUTOSAVE_KEY)).toBe(false);
+    target.dispatchEvent(new Event('pagehide'));
+    expect(JSON.parse(map.get(AUTOSAVE_KEY)!).stripColor).toBe('#123456');
+    stop();
+    vi.unstubAllGlobals();
   });
 });

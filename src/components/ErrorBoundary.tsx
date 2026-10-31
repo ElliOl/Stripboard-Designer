@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { useStripboardStore } from '@/store/stripboard';
+import { clearAllAutosaves, noteCrash, getAutosaveBackup, hasAutosaveBackup } from '@/lib/autosave';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -17,24 +18,38 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    noteCrash();
     console.error('Unhandled UI error:', error, info.componentStack);
+  }
+
+  private download(text: string, name: string) {
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   private handleDownload = () => {
     try {
       const data = useStripboardStore.getState().exportProject();
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: 'application/json',
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'stripboard-project.json';
-      a.click();
-      URL.revokeObjectURL(url);
+      this.download(JSON.stringify(data, null, 2), 'stripboard-project.json');
     } catch (err) {
       console.error('Failed to export project from error screen:', err);
     }
+  };
+
+  private handleDownloadBackup = () => {
+    const raw = getAutosaveBackup();
+    if (raw) this.download(raw, 'stripboard-autosave-backup.json');
+  };
+
+  private handleNewProject = () => {
+    if (!confirm('Start a new project? This discards the saved autosave.')) return;
+    clearAllAutosaves();
+    window.location.reload();
   };
 
   render() {
@@ -50,7 +65,21 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <p className="text-xs text-[#8a8a9a] font-mono break-words mb-4">
             {error.message}
           </p>
-          <div className="flex gap-2 justify-end">
+          <div className="flex gap-2 justify-end flex-wrap">
+            {hasAutosaveBackup() && (
+              <button
+                onClick={this.handleDownloadBackup}
+                className="px-3 py-1.5 text-xs rounded-lg bg-[#2a2a34] text-[#ededf0] hover:bg-[#34343f] transition-colors"
+              >
+                Download autosave
+              </button>
+            )}
+            <button
+              onClick={this.handleNewProject}
+              className="px-3 py-1.5 text-xs rounded-lg bg-[#2a2a34] text-[#ededf0] hover:bg-[#34343f] transition-colors"
+            >
+              Start a new project
+            </button>
             <button
               onClick={this.handleDownload}
               className="px-3 py-1.5 text-xs rounded-lg bg-[#2a2a34] text-[#ededf0] hover:bg-[#34343f] transition-colors"

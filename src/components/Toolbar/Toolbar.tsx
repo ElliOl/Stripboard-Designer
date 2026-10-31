@@ -16,10 +16,11 @@ import {
   Wand2,
 } from 'lucide-react';
 import { useStripboardStore } from '@/store/stripboard';
-import { clearAutosave } from '@/lib/autosave';
+import { clearAllAutosaves } from '@/lib/autosave';
 import libraryData from '@/data/library.json';
 import type { ComponentDefinition } from '@/lib/types';
 import { parseKiCadNetlist, isVirtualRef, type ParsedNetlist } from '@/lib/netlist-parser';
+import { sanitizeProject } from '@/lib/project-validation';
 import { isVeroProject, convertVeroProject } from '@/lib/vero-import';
 import type { ToolType, NetlistImportOptions } from '@/lib/types';
 import { SettingsDialog } from '@/components/SettingsDialog';
@@ -129,6 +130,13 @@ export const Toolbar = () => {
     URL.revokeObjectURL(url);
   };
 
+  const confirmReplaceBoard = () => {
+    const { components: cs, wires: ws, strips: ss } = useStripboardStore.getState();
+    const hasCuts = ss.some((s) => (s.breaks?.length ?? 0) > 0 || (s.cuts?.length ?? 0) > 0);
+    if (cs.length === 0 && ws.length === 0 && !hasCuts) return true;
+    return confirm('Open this project? This replaces the current board.');
+  };
+
   const handleImport = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -149,6 +157,7 @@ export const Toolbar = () => {
         if (isVeroProject(data)) {
           try {
             const { project, notes } = convertVeroProject(data, componentDefinitions);
+            if (!confirmReplaceBoard()) return;
             importProject(project);
             if (notes.length) {
               alert(`Imported Vero Designer layout.\n\nOff-board wiring:\n${notes.join('\n')}`);
@@ -158,7 +167,16 @@ export const Toolbar = () => {
           }
           return;
         }
-        importProject(data as Parameters<typeof importProject>[0]);
+        const result = sanitizeProject(data);
+        if (!result) {
+          alert('This file is not a valid Stripboard Designer project.');
+          return;
+        }
+        if (!confirmReplaceBoard()) return;
+        importProject(result.project);
+        if (result.dropped > 0) {
+          alert(`Opened the project, but ${result.dropped} damaged item${result.dropped !== 1 ? 's were' : ' was'} skipped.`);
+        }
       };
       reader.readAsText(file);
     };
@@ -170,7 +188,7 @@ export const Toolbar = () => {
     reset();
     // reset() clears the component definitions, so load the built-in library again
     loadComponentDefinitions(libraryData as ComponentDefinition[]);
-    clearAutosave();
+    clearAllAutosaves();
   };
 
   const handleImportNetlist = () => {

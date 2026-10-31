@@ -184,6 +184,8 @@ export type HistoryEntry = {
   pcbs: PCB[];
   netGroups: NetGroup[];
   referenceImages: ReferenceImageState[];
+  componentDefinitions: ComponentDefinition[];
+  stripColor: string;
 };
 
 export type ProjectData = {
