@@ -1,6 +1,8 @@
 import { memo } from 'react';
 import { Line, Circle, Group } from 'react-konva';
 import type { Wire as WireType } from '@/lib/types';
+import { useStripboardStore } from '@/store/stripboard';
+import { scaleHitTolerance } from '@/lib/canvas-geometry';
 
 const GRID_PITCH = 25.4;
 
@@ -65,6 +67,8 @@ const WireImpl = ({
   effectiveNetId, 
   highlightedNetId 
 }: WireProps) => {
+  const zoom = useStripboardStore((s) => s.zoom);
+  const hitWidth = scaleHitTolerance(14, zoom);
   const flatPoints = wire.points.flatMap((p) => [
     p.col * GRID_PITCH,
     p.row * GRID_PITCH,
@@ -83,10 +87,10 @@ const WireImpl = ({
       <Line
         points={flatPoints}
         stroke="transparent"
-        strokeWidth={14}
+        strokeWidth={hitWidth}
         lineCap="round"
         lineJoin="round"
-        hitStrokeWidth={14}
+        hitStrokeWidth={hitWidth}
       />
 
       {/* Visible wire */}

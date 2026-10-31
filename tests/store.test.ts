@@ -249,3 +249,81 @@ describe('component library', () => {
     expect(ids.filter((id) => id === 'resistor')).toHaveLength(1);
   });
 });
+
+describe('history and moving', () => {
+  const img = {
+    id: 'img', src: 'data:,', x: 0, y: 0, naturalWidth: 1, naturalHeight: 1,
+    scale: 1, opacity: 1, inverted: false, onTop: false, visible: true,
+  };
+
+  it('undo and redo cover reference image edits', () => {
+    S().addReferenceImage(img);
+    S().saveToHistory();
+    S().updateReferenceImageById('img', { x: 50 });
+    S().undo();
+    expect(S().referenceImages[0].x).toBe(0);
+    S().redo();
+    expect(S().referenceImages[0].x).toBe(50);
+    S().saveToHistory();
+    S().clearAllReferenceImages();
+    S().undo();
+    expect(S().referenceImages.map((i) => i.id)).toEqual(['img']);
+  });
+
+  it('moving a selection never takes parts or wires off the board', () => {
+    S().addComponent(resistor('r', 'R1', 1, 1));
+    S().addWire({ id: 'w', netId: 'n', points: [{ row: 5, col: 5 }, { row: 5, col: 8 }] });
+    S().setSelectedItems(['r', 'w']);
+    S().moveSelectedItems(-10, -10);
+    expect(S().components[0].pins[0].position).toEqual({ row: 0, col: 0 });
+    expect(S().wires[0].points[0]).toEqual({ row: 4, col: 4 });
+    S().moveSelectedItems(0, 1000);
+    expect(Math.max(...S().wires[0].points.map((p) => p.col))).toBe(S().cols - 1);
+    expect(Math.max(...S().components[0].pins.map((p) => p.position.col))).toBeLessThan(S().cols);
+  });
+
+  it('moving cuts keeps them, mirrors drill cuts into breaks and tracks selection', () => {
+    S().addCut(3, 5, 'drill');
+    S().addCut(3, 8.5, 'slice');
+    S().setSelectedItems(['cut-3-5', 'cut-3-8.5', 'cut-9-9']);
+    S().moveSelectedItems(1, 2);
+    const strip = S().strips.find((s) => !s.pcbId && s.row === 4)!;
+    expect(strip.cuts).toEqual([{ col: 7, type: 'drill' }, { col: 10.5, type: 'slice' }]);
+    expect(strip.breaks).toContain(7);
+    expect(S().strips.find((s) => !s.pcbId && s.row === 3)!.breaks).not.toContain(5);
+    expect(S().selectedItems).toEqual(['cut-4-7', 'cut-4-10.5']);
+    // A move past the edge is clamped, and moving back restores the cuts
+    S().moveSelectedItems(0, 1000);
+    expect(S().strips.find((s) => !s.pcbId && s.row === 4)!.cuts).toHaveLength(2);
+    S().moveSelectedItems(0, -1000);
+    expect(S().strips.find((s) => !s.pcbId && s.row === 4)!.cuts).toHaveLength(2);
+  });
+
+  it('keeps a selection on its own PCB', () => {
+    S().addPCB('Second', 6, 6);
+    const pcb = S().pcbs.find((p) => !p.isMain)!;
+    S().addComponent(resistor('r', 'R1', pcb.position.row + 1, pcb.position.col));
+    S().setSelectedItems(['r']);
+    S().moveSelectedItems(100, 100);
+    const pins = S().components[0].pins;
+    for (const p of pins) {
+      expect(p.position.row).toBeLessThan(pcb.position.row + pcb.rows);
+      expect(p.position.col).toBeLessThan(pcb.position.col + pcb.cols);
+    }
+  });
+
+  it('loading the library after a pin drag keeps the custom definition', () => {
+    S().addComponent({
+      id: 'c', reference: 'C1', definitionId: 'capacitor-rect', position: { row: 4, col: 2 }, rotation: 0,
+      pins: [
+        { number: '1', position: { row: 4, col: 2 }, extended: 0 },
+        { number: '2', position: { row: 4, col: 4 }, extended: 0 },
+      ],
+    });
+    S().moveComponentPin('c', 1, { row: 4, col: 6 });
+    S().finalizePinDrag('c');
+    const custom = S().components[0].definitionId;
+    S().loadComponentDefinitions(lib);
+    expect(S().componentDefinitions.some((d) => d.id === custom)).toBe(true);
+  });
+});

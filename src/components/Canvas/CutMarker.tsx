@@ -1,6 +1,8 @@
 import { memo } from 'react';
 import { Group, Circle, Line } from 'react-konva';
 import type { Cut } from '@/lib/types';
+import { useStripboardStore } from '@/store/stripboard';
+import { scaleHitTolerance } from '@/lib/canvas-geometry';
 
 const GRID_PITCH = 25.4;
 const STRIP_HEIGHT = 16;
@@ -23,6 +25,8 @@ const CutMarkerImpl = ({
   showCuts,
   pcbPosition,
 }: CutMarkerProps) => {
+  const zoom = useStripboardStore((s) => s.zoom);
+  const hitRadius = scaleHitTolerance(10, zoom);
   const isDrill = cut.type === 'drill';
   const isSlice = cut.type === 'slice';
   const y = stripRow * GRID_PITCH - STRIP_HEIGHT / 2;
@@ -38,9 +42,9 @@ const CutMarkerImpl = ({
       <Circle
         x={cut.col * GRID_PITCH}
         y={stripRow * GRID_PITCH}
-        radius={10}
+        radius={hitRadius}
         fill="transparent"
-        hitStrokeWidth={10}
+        hitStrokeWidth={hitRadius}
         listening={true}
       />
       {/* Circle cut indicator for drill cuts only */}

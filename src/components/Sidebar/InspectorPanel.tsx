@@ -428,11 +428,16 @@ function UnconnectedNetsPanel() {
     const avgCol = netPins.reduce((sum, pin) => sum + pin.col, 0) / netPins.length;
     const GRID_PITCH = 25.4;
 
+    const newZoom = 1.5;
+    // Centre on the canvas area, not the window (the sidebar takes part of it)
+    const area = document.querySelector('canvas')?.parentElement?.getBoundingClientRect();
+    const centreX = area ? area.width / 2 : window.innerWidth / 2;
+    const centreY = area ? area.height / 2 : window.innerHeight / 2;
     setPan({
-      x: window.innerWidth / 2 - avgCol * GRID_PITCH,
-      y: window.innerHeight / 2 - avgRow * GRID_PITCH
+      x: centreX - avgCol * GRID_PITCH * newZoom,
+      y: centreY - avgRow * GRID_PITCH * newZoom
     });
-    setZoom(1.5);
+    setZoom(newZoom);
     setHighlightedNet(netId);
   };
 
@@ -716,12 +721,41 @@ function ComponentProps({
     (d) => d.id === component.definitionId
   );
 
-  const handleRefChange = (ref: string) => {
+  const [refDraft, setRefDraft] = useState(component.reference);
+  const [valueDraft, setValueDraft] = useState(component.value || '');
+  const [refError, setRefError] = useState('');
+  useEffect(() => setRefDraft(component.reference), [component.reference]);
+  useEffect(() => setValueDraft(component.value || ''), [component.value]);
+
+  function revertRef() {
+    setRefDraft(component.reference);
+    setRefError('');
+  }
+
+  const commitRef = (revertOnFail: boolean) => {
+    const ref = refDraft.trim();
+    if (ref === component.reference) {
+      setRefDraft(component.reference);
+      setRefError('');
+      return;
+    }
+    const fail = (msg: string) => {
+      if (revertOnFail) revertRef();
+      else setRefError(msg);
+    };
+    if (!ref) return fail('Reference cannot be empty');
+    const others = useStripboardStore.getState().components;
+    if (others.some((c) => c.id !== component.id && c.reference === ref)) {
+      return fail(`${ref} is already used`);
+    }
+    setRefError('');
     saveToHistory();
     updateComponent(component.id, { reference: ref });
   };
 
-  const handleValueChange = (value: string) => {
+  const commitValue = () => {
+    const value = valueDraft.trim();
+    if (value === (component.value || '')) return;
     saveToHistory();
     updateComponent(component.id, { value: value || undefined });
   };
@@ -765,8 +799,13 @@ function ComponentProps({
             <label className="text-[10px] text-[#52525b] w-8">Ref</label>
             <input
               type="text"
-              value={component.reference}
-              onChange={(e) => handleRefChange(e.target.value)}
+              value={refDraft}
+              onChange={(e) => { setRefDraft(e.target.value); setRefError(''); }}
+              onBlur={() => commitRef(true)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRef(false);
+                else if (e.key === 'Escape') revertRef();
+              }}
               className="bg-[#19191d] text-[#a6a6b8] text-xs px-2 py-1 rounded-md flex-1 min-w-0 border border-[#222228] focus:border-[#c8ff2e] focus:outline-none transition-colors"
             />
             <button
@@ -777,14 +816,22 @@ function ComponentProps({
               {'\u21BB'} {component.rotation}{'\u00B0'}
             </button>
           </div>
+          {refError && (
+            <div className="px-3 text-[10px] text-[#ef4444]" role="alert">{refError}</div>
+          )}
 
           {/* Value */}
           <div className="px-3 py-1 flex items-center gap-2">
             <label className="text-[10px] text-[#52525b] w-8">Val</label>
             <input
               type="text"
-              value={component.value || ''}
-              onChange={(e) => handleValueChange(e.target.value)}
+              value={valueDraft}
+              onChange={(e) => setValueDraft(e.target.value)}
+              onBlur={commitValue}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitValue();
+                else if (e.key === 'Escape') setValueDraft(component.value || '');
+              }}
               placeholder="e.g. 10k, 56pF"
               className="bg-[#19191d] text-[#a78bfa] text-xs px-2 py-1 rounded-md flex-1 min-w-0 border border-[#222228] focus:border-[#a78bfa] focus:outline-none transition-colors placeholder:text-[#2c2c36]"
             />

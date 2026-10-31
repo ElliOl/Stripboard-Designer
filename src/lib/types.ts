@@ -182,6 +182,7 @@ export type HistoryEntry = {
   cols: number;
   pcbs: PCB[];
   netGroups: NetGroup[];
+  referenceImages: ReferenceImageState[];
 };
 
 export type ProjectData = {

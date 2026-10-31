@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Crop, Trash2 } from 'lucide-react';
+import { useStripboardStore } from '@/store/stripboard';
 
 export interface ImageContextMenuState {
   imageId: string;
@@ -13,6 +14,8 @@ interface ImageContextMenuProps {
   onClose: () => void;
   onCropImage: (id: string) => void;
   onDeleteImage: (id: string) => void;
+  /** Cropping only supports images in the multi-image list. */
+  canCrop?: boolean;
 }
 
 export const ImageContextMenu = ({
@@ -20,6 +23,7 @@ export const ImageContextMenu = ({
   onClose,
   onCropImage,
   onDeleteImage,
+  canCrop = true,
 }: ImageContextMenuProps) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [adjustedPos, setAdjustedPos] = useState({ x: state.x, y: state.y });
@@ -72,6 +76,8 @@ export const ImageContextMenu = ({
       }}
     >
       <div className="bg-[#1a1a22] border border-[#2a2a34] rounded-lg shadow-2xl shadow-black/50 py-1 min-w-[160px]">
+        {canCrop && (
+          <>
         <button
           onClick={() => {
             onCropImage(state.imageId);
@@ -84,9 +90,12 @@ export const ImageContextMenu = ({
         </button>
 
         <div className="h-px bg-[#2a2a34] my-1 mx-2" />
+          </>
+        )}
 
         <button
           onClick={() => {
+            useStripboardStore.getState().saveToHistory();
             onDeleteImage(state.imageId);
             onClose();
           }}

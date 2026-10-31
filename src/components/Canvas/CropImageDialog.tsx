@@ -201,7 +201,8 @@ export const CropImageDialog = ({ imageId, onClose }: CropImageDialogProps) => {
     // Convert to data URL
     const croppedSrc = cropCanvas.toDataURL('image/png');
 
-    // Update the image in the store
+    // Update the image in the store (undoable)
+    useStripboardStore.getState().saveToHistory();
     updateReferenceImageById(imageId, {
       src: croppedSrc,
       naturalWidth: cropRect.width,

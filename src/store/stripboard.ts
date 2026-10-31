@@ -105,6 +105,8 @@ const getSnapshot = (state: StripboardState): HistoryEntry => ({
   cols: state.cols,
   pcbs: JSON.parse(JSON.stringify(state.pcbs)),
   netGroups: JSON.parse(JSON.stringify(state.netGroups)),
+  // Images are replaced, never mutated, by the store actions, so share them
+  referenceImages: [...state.referenceImages],
 });
 
 interface StripboardStore extends StripboardState {
@@ -953,152 +955,134 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
   },
 
   // ─── Bulk Movement ──────────────────────────────────────────
-  moveSelectedItems: (deltaRow, deltaCol) =>
+  moveSelectedItems: (reqRow, reqCol) =>
     set((state) => {
       // Reset paste count when items are moved
       pasteCount = 0;
-      
-      // Parse selected cuts → { oldRow, oldCol, newRow, newCol, type }
-      // Support fractional columns for slice cuts (e.g., cut-5-7.5)
-      const CUT_RE = /^cut-(\d+)-(\d+(?:\.\d+)?)$/;
-      const cutMoves = state.selectedItems
-        .map((id) => {
-          const match = id.match(CUT_RE);
-          if (!match) return null;
-          
-          const oldRow = +match[1];
-          const oldCol = +match[2];
-          
-          // Find the cut type from the strip
-          let cutType: 'drill' | 'slice' = 'drill';
-          for (const pcb of state.pcbs) {
-            const localRow = oldRow - pcb.position.row;
-            const localCol = oldCol - pcb.position.col;
-            const intCol = Math.floor(oldCol);
-            
-            if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
-              const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
-              const strip = state.strips.find(s => s.id === stripId);
-              if (strip) {
-                const cut = strip.cuts?.find(c => c.col === localCol);
-                if (cut) {
-                  cutType = cut.type;
-                }
-              }
-              break;
-            }
-          }
-          
-          return {
-            oldRow,
-            oldCol,
-            newRow: oldRow + deltaRow,
-            newCol: oldCol + deltaCol,
-            type: cutType,
-          };
-        })
-        .filter((m): m is { oldRow: number; oldCol: number; newRow: number; newCol: number; type: 'drill' | 'slice' } => m !== null);
 
-      // Move cuts: remove from old positions, add to new positions using PCB-aware logic
+      const CUT_RE = /^cut-(\d+)-(\d+(?:\.\d+)?)$/;
+      const sel = new Set(state.selectedItems);
+      const pcbAt = (row: number, col: number) =>
+        state.pcbs.find(
+          (p) =>
+            row >= p.position.row && row < p.position.row + p.rows &&
+            Math.floor(col) >= p.position.col && Math.floor(col) < p.position.col + p.cols
+        );
+
+      // Clamp the delta so every selected point stays on the PCB it is on now
+      let loR = -Infinity, hiR = Infinity, loC = -Infinity, hiC = Infinity;
+      const limit = (row: number, col: number) => {
+        const pcb = pcbAt(row, col);
+        if (!pcb) return;
+        const frac = col % 1 !== 0 ? 0.5 : 0;
+        loR = Math.max(loR, pcb.position.row - row);
+        hiR = Math.min(hiR, pcb.position.row + pcb.rows - 1 - row);
+        loC = Math.max(loC, pcb.position.col - col);
+        hiC = Math.min(hiC, pcb.position.col + pcb.cols - 1 + frac - col);
+      };
+      for (const c of state.components) {
+        if (sel.has(c.id)) for (const p of c.pins) limit(p.position.row, p.position.col);
+      }
+      for (const w of state.wires) {
+        if (sel.has(w.id)) for (const p of w.points) limit(p.row, p.col);
+      }
+      for (const id of state.selectedItems) {
+        const m = id.match(CUT_RE);
+        if (m) limit(+m[1], +m[2]);
+      }
+      if (loR > hiR || loC > hiC) return {};
+      const deltaRow = Math.min(Math.max(reqRow, loR), hiR);
+      const deltaCol = Math.min(Math.max(reqCol, loC), hiC);
+      if (deltaRow === 0 && deltaCol === 0) return {};
+
+      // Selected cuts that exist on the board
+      type CutMove = { oldRow: number; oldCol: number; type: 'drill' | 'slice' };
+      const stripFor = (row: number, col: number) => {
+        const pcb = pcbAt(row, col);
+        if (!pcb) return null;
+        const localRow = row - pcb.position.row;
+        const id = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
+        return { id, localCol: col - pcb.position.col };
+      };
+      const cutMoves: CutMove[] = [];
+      const staleIds = new Set<string>();
+      for (const id of state.selectedItems) {
+        const m = id.match(CUT_RE);
+        if (!m) continue;
+        const oldRow = +m[1];
+        const oldCol = +m[2];
+        const at = stripFor(oldRow, oldCol);
+        const cut = at && state.strips.find((s) => s.id === at.id)?.cuts?.find((c) => c.col === at.localCol);
+        if (cut) cutMoves.push({ oldRow, oldCol, type: cut.type });
+        else staleIds.add(id);
+      }
+
       let newStrips = state.strips;
       if (cutMoves.length > 0) {
-        // First remove all old cuts using world coordinates
-        for (const move of cutMoves) {
-          for (const pcb of state.pcbs) {
-            const localRow = move.oldRow - pcb.position.row;
-            const localCol = move.oldCol - pcb.position.col;
-            const intCol = Math.floor(move.oldCol);
-            
-            if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
-              const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
-              newStrips = newStrips.map((strip) => {
-                if (strip.id === stripId) {
-                  // Remove from both cuts and breaks arrays (using local coordinates)
-                  const newCuts = (strip.cuts || []).filter(c => c.col !== localCol);
-                  const newBreaks = (strip.breaks || []).filter(b => b !== localCol);
-                  return { ...strip, cuts: newCuts, breaks: newBreaks };
+        // Remove all old cuts first, then add at the new positions
+        for (const mv of cutMoves) {
+          const at = stripFor(mv.oldRow, mv.oldCol)!;
+          newStrips = newStrips.map((s) =>
+            s.id === at.id
+              ? {
+                  ...s,
+                  cuts: (s.cuts || []).filter((c) => c.col !== at.localCol),
+                  breaks: (s.breaks || []).filter((b) => b !== at.localCol),
                 }
-                return strip;
-              });
-              break;
-            }
-          }
+              : s
+          );
         }
-        
-        // Then add all new cuts using world coordinates
-        for (const move of cutMoves) {
-          for (const pcb of state.pcbs) {
-            const localRow = move.newRow - pcb.position.row;
-            const localCol = move.newCol - pcb.position.col;
-            const intCol = Math.floor(move.newCol);
-            
-            if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
-              const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
-              newStrips = newStrips.map((strip) => {
-                if (strip.id === stripId) {
-                  // Check if position is within strip bounds
-                  const intLocalCol = Math.floor(localCol);
-                  const isInBounds = move.type === 'drill' 
-                    ? intLocalCol >= strip.startCol && intLocalCol <= strip.endCol
-                    : intLocalCol >= strip.startCol - 0.5 && intLocalCol <= strip.endCol + 0.5;
-                  
-                  if (isInBounds) {
-                    const cuts = strip.cuts || [];
-                    // Only add if not already present (using local coordinates)
-                    if (!cuts.some(c => c.col === localCol)) {
-                      return { 
-                        ...strip, 
-                        cuts: [...cuts, { col: localCol, type: move.type }].sort((a, b) => a.col - b.col) 
-                      };
-                    }
-                  }
-                }
-                return strip;
-              });
-              break;
+        for (const mv of cutMoves) {
+          const newRow = mv.oldRow + deltaRow;
+          const newCol = mv.oldCol + deltaCol;
+          const at = stripFor(newRow, newCol);
+          if (!at) continue;
+          newStrips = newStrips.map((s) => {
+            if (s.id !== at.id) return s;
+            const intLocal = Math.floor(at.localCol);
+            const inBounds = mv.type === 'drill'
+              ? intLocal >= s.startCol && intLocal <= s.endCol
+              : intLocal >= s.startCol - 0.5 && intLocal <= s.endCol + 0.5;
+            const cuts = s.cuts || [];
+            if (!inBounds || cuts.some((c) => c.col === at.localCol)) return s;
+            let breaks = s.breaks || [];
+            // Drill cuts are mirrored into the legacy breaks list, like addCut
+            if (mv.type === 'drill' && Number.isInteger(at.localCol) && !breaks.includes(at.localCol)) {
+              breaks = [...breaks, at.localCol].sort((a, b) => a - b);
             }
-          }
+            return {
+              ...s,
+              cuts: [...cuts, { col: at.localCol, type: mv.type }].sort((a, b) => a.col - b.col),
+              breaks,
+            };
+          });
         }
       }
 
-      // Update selectedItems so cut IDs reflect their new positions
-      const newSelectedItems =
-        cutMoves.length > 0
-          ? state.selectedItems.map((id) => {
-              const m = id.match(CUT_RE);
-              if (m) return `cut-${+m[1] + deltaRow}-${+m[2] + deltaCol}`;
-              return id;
-            })
-          : state.selectedItems;
+      // Selection follows the cuts to their new positions; stale ids are dropped
+      const newSelectedItems = state.selectedItems
+        .filter((id) => !staleIds.has(id))
+        .map((id) => {
+          const m = id.match(CUT_RE);
+          return m ? `cut-${+m[1] + deltaRow}-${+m[2] + deltaCol}` : id;
+        });
 
       return {
         components: state.components.map((c) =>
-          state.selectedItems.includes(c.id)
+          sel.has(c.id)
             ? {
                 ...c,
-                position: {
-                  row: c.position.row + deltaRow,
-                  col: c.position.col + deltaCol,
-                },
+                position: { row: c.position.row + deltaRow, col: c.position.col + deltaCol },
                 pins: c.pins.map((pin) => ({
                   ...pin,
-                  position: {
-                    row: pin.position.row + deltaRow,
-                    col: pin.position.col + deltaCol,
-                  },
+                  position: { row: pin.position.row + deltaRow, col: pin.position.col + deltaCol },
                 })),
               }
             : c
         ),
         wires: state.wires.map((w) =>
-          state.selectedItems.includes(w.id)
-            ? {
-                ...w,
-                points: w.points.map((p) => ({
-                  row: p.row + deltaRow,
-                  col: p.col + deltaCol,
-                })),
-              }
+          sel.has(w.id)
+            ? { ...w, points: w.points.map((p) => ({ row: p.row + deltaRow, col: p.col + deltaCol })) }
             : w
         ),
         strips: newStrips,
