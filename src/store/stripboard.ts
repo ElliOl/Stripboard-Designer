@@ -1539,6 +1539,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
         id: `comp-${Date.now()}-${pc.ref}`,
         reference: pc.ref,
         value: pc.value || undefined,
+        footprint: pc.footprint || undefined,
         definitionId: defId,
         position: pos,
         rotation,
@@ -1715,6 +1716,10 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
 
       // Update footprint (definition)
       if (options.updateFootprints) {
+        if (pc.footprint && pc.footprint !== existing.footprint) {
+          updates.footprint = pc.footprint;
+          changed = true;
+        }
         let defId = mapFootprintToDefinition(pc.footprint, pc.ref, pc.value);
         let def = defId ? defs.find((d) => d.id === defId) : null;
         const pinSet = pinsByRef.get(pc.ref);
@@ -1874,6 +1879,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
           id: `comp-${Date.now()}-${pc.ref}`,
           reference: pc.ref,
           value: pc.value || undefined,
+          footprint: pc.footprint || undefined,
           definitionId: defId,
           position: pos,
           rotation,

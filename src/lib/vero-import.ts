@@ -34,6 +34,8 @@ type VeroComponent = {
   transistorKind?: string;
   potType?: string;
   boardPinSources?: Record<string, string[]>;
+  /** Set by Auto layout on fixed-footprint parts such as pin headers and modules */
+  customFootprint?: { kind?: 'header' | 'module' };
 };
 
 type VeroFootprintPin = { logical: string; physical?: string; x: number; y: number };
@@ -220,7 +222,11 @@ function libraryCandidates(c: VeroComponent): string[] {
 }
 
 /** Base id + footprint type for definitions built from a Vero footprint */
-function customStyle(type: string): { base: string; footprint: FootprintTypeName } {
+function customStyle(c: VeroComponent): { base: string; footprint: FootprintTypeName } {
+  const type = c.type;
+  if (type === 'otherIC' && c.customFootprint?.kind === 'header') return { base: 'header', footprint: 'SIP' };
+  // 'mcu-' in the id gives a module body
+  if (type === 'otherIC' && c.customFootprint?.kind === 'module') return { base: 'mcu-module', footprint: 'DIP' };
   switch (type) {
     case 'resistor':
       return { base: 'resistor', footprint: 'Axial' };
@@ -273,8 +279,8 @@ function matchLibrary(
   return null;
 }
 
-function customDefinition(type: string, targets: TargetPin[]): ComponentDefinition {
-  const { base, footprint } = customStyle(type);
+function customDefinition(c: VeroComponent, targets: TargetPin[]): ComponentDefinition {
+  const { base, footprint } = customStyle(c);
   const minRow = Math.min(...targets.map((t) => t.row));
   const minCol = Math.min(...targets.map((t) => t.col));
   const pins: PinDefinition[] = targets.map((t) => ({
@@ -289,7 +295,8 @@ function customDefinition(type: string, targets: TargetPin[]): ComponentDefiniti
   return {
     id: `vero-${base}-${key}`,
     name: `${base} (Vero layout)`,
-    category: footprint === 'DIP' ? 'IC' : footprint === 'TO92' ? 'Discrete' : 'Passive',
+    category:
+      base === 'header' ? 'Connector' : footprint === 'DIP' ? 'IC' : footprint === 'TO92' ? 'Discrete' : 'Passive',
     footprint: {
       type: footprint,
       dimensions: {
@@ -381,7 +388,7 @@ export function convertVeroProject(
       rotation = match.rotation;
       position = { row: match.row, col: match.col };
     } else {
-      def = customDefinition(vc.type, targets);
+      def = customDefinition(vc, targets);
       customDefs.set(def.id, def);
       position = {
         row: Math.min(...targets.map((t) => t.row)),

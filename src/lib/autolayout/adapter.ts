@@ -3,11 +3,13 @@
 // Turns the current board (components with KiCad pin numbers, plus
 // nets) into the schematic Vero Designer's autorouter works on:
 // typed parts and wires between "REF:pin" endpoints. Parts that
-// cannot sit on a stripboard (panel pots, jacks, switches, headers,
-// modules) become labelled edge pads instead, one per net.
+// cannot sit on a stripboard (panel pots, jacks, switches, connectors)
+// become labelled edge pads instead, one per net. Pin headers and the
+// Arduino Nano are placed as fixed multi-pin packages.
 
 import type { Component, ComponentDefinition, Net } from '@/lib/types';
 import type { VeroEngineWire } from './vero-engine.generated';
+import { footprintFor, headerBasePins, isArduinoNano, nanoBasePins, parseHeaderFootprint } from './fixed-parts';
 
 /** Raw Vero part record; the engine normalises it before use */
 export type VeroPartRecord = Record<string, unknown> & { id: string; type: string };
@@ -50,9 +52,29 @@ type Mapped = {
   record: Record<string, unknown> & { type: string };
   /** App pin number -> Vero logical pin name */
   pinName: (number: string) => string | undefined;
+  /** App definition to prefer when converting the placed part back */
+  hint?: string;
+  /** Shown to the user as a warning about this part */
+  warning?: string;
 };
 
 type Classification = { mapped: Mapped } | { offboard: string };
+
+/** Net id per pin number of a component */
+type NetOf = (pin: string) => string | undefined;
+
+// Board-mount trimmers (multi-turn and single-turn) versus panel-mount pots,
+// judged by the KiCad footprint name
+const TRIMMER_FOOTPRINT = /trim|(?:^|[_:-])T93|3(?:296|362|386|266|006|009|214|299)|Piher[_-]?PT|Vishay_(?:T7|T9|248|249)/i;
+const PANEL_POT_FOOTPRINT = /RD901F|RV16|RK09|RK097|RK163|RV09|PTV09|PTA\d|PTL\d|Alpha|Alps|Panel|Slide/i;
+const JACK_FOOTPRINT = /jack|PJ398|PJ301|audio|TRS|6\.35|3\.5mm/i;
+const SWITCH_FOOTPRINT = /switch|toggle|tact|push_?button/i;
+
+function trimmerPotType(footprint: string): string {
+  if (/3296/i.test(footprint)) return 'trimmer-3296';
+  if (/3362/i.test(footprint)) return 'trimmer-3362p';
+  return 'trimmer';
+}
 
 const identityPins = (numbers: string[]) => (n: string) => (numbers.includes(n) ? n : undefined);
 
@@ -83,19 +105,106 @@ function transistorMapping(def: ComponentDefinition, component: Component): Mapp
   };
 }
 
-function classify(component: Component, def: ComponentDefinition | undefined): Classification {
-  if (!def) return { offboard: 'Unknown footprint' };
-  const id = def.id;
+function fixedPart(
+  component: Component,
+  footprint: string,
+  kind: 'header' | 'module',
+  base: { name: string; x: number; y: number }[],
+  rotations: number[],
+  netOf: NetOf,
+  hint: string | undefined,
+  failure: string
+): Classification {
+  const names = new Set(base.map((p) => p.name));
+  const stray = component.pins.find((p) => !names.has(p.number));
+  if (stray) return { offboard: `Pin ${stray.number} is not on the ${footprint} footprint - wire it to the edge pads` };
+  const custom = footprintFor(kind, base, rotations, netOf);
+  if (!custom) return { offboard: failure };
+  return {
+    mapped: {
+      record: {
+        type: 'otherIC',
+        value: component.value ?? '',
+        otherIcModel: 'GENERIC',
+        genericIcPinCount: 4,
+        genericIcLabel: component.value || component.reference,
+        customFootprint: custom,
+      },
+      pinName: (n) => (names.has(n) ? n : undefined),
+      hint,
+    },
+  };
+}
+
+function classify(component: Component, def: ComponentDefinition | undefined, netOf: NetOf): Classification {
+  const footprint = component.footprint ?? '';
+  const id = def?.id ?? '';
   const value = component.value ?? '';
-  const numbers = def.pins.map((p) => p.number);
+  const numbers = (def?.pins ?? component.pins).map((p) => p.number);
 
-  if (id.startsWith('mcu-')) return { offboard: 'Module - wire it to the edge pads' };
-
-  if (/nettie/i.test(value) || /^NT\d/i.test(component.reference)) {
+  // Net ties join two nets with a link
+  if (/nettie/i.test(footprint) || /nettie/i.test(value) || /^NT\d/i.test(component.reference)) {
     if (numbers.length === 2) {
-      return { mapped: { record: { type: 'jumper', value }, pinName: identityPins(numbers) } };
+      return { mapped: { record: { type: 'jumper', value }, pinName: (n) => ({ [numbers[0]]: '1', [numbers[1]]: '2' })[n] } };
     }
-    return { offboard: 'Net tie' };
+    return { offboard: 'Net tie with other than two pins - wire it to the edge pads' };
+  }
+
+  // Pin headers and sockets, including the Euro power header
+  const parsedHeader = parseHeaderFootprint(footprint);
+  if (parsedHeader) {
+    // Some KiCad footprints have fewer pins than the schematic symbol; follow the netlist
+    const highest = Math.max(0, ...component.pins.map((p) => Number(p.number)).filter(Number.isInteger));
+    const cols = Math.max(parsedHeader.cols, Math.ceil(highest / parsedHeader.rows));
+    const header = { ...parsedHeader, cols };
+    const label = `${header.rows}x${header.cols} header`;
+    const hint = header.rows === 1 && header.cols === 2 ? 'header-1x2' : header.rows === 1 && header.cols === 4 ? 'header-1x4' : undefined;
+    const placed = fixedPart(
+      component,
+      footprint,
+      'header',
+      headerBasePins(header),
+      [0, 1, 2, 3],
+      netOf,
+      hint,
+      header.rows === 2
+        ? `${label}: pins side by side on a strip are always joined and neighbouring pins are on different nets - wire it to the edge pads`
+        : `${label} has no usable orientation - wire it to the edge pads`
+    );
+    if (cols > parsedHeader.cols && 'mapped' in placed) {
+      placed.mapped.warning = `${component.reference}: footprint ${footprint} has ${parsedHeader.rows * parsedHeader.cols} pins but the netlist uses pin ${highest}, so it is placed as a ${label}.`;
+    }
+    return placed;
+  }
+
+  // Arduino Nano: fixed, pins down the strips, either way round
+  if (isArduinoNano(footprint) || id === 'mcu-arduino-nano') {
+    return fixedPart(component, footprint, 'module', nanoBasePins(), [0, 2], netOf, 'mcu-arduino-nano', 'Arduino Nano has no usable orientation - wire it to the edge pads');
+  }
+  if (id.startsWith('mcu-')) return { offboard: 'Module with no stripboard footprint yet - wire it to the edge pads' };
+
+  if (!def) return { offboard: 'No component definition for this part - wire it to the edge pads' };
+
+  // Potentiometers: board trimmers are placed, panel pots go off-board
+  if (id === 'potentiometer' || id.startsWith('trimpot') || id === 'encoder') {
+    if (id === 'encoder' || /encoder|rotary/i.test(footprint)) return { offboard: 'Panel encoder - wire it to the edge pads' };
+    const trimmer = id.startsWith('trimpot') || (TRIMMER_FOOTPRINT.test(footprint) && !PANEL_POT_FOOTPRINT.test(footprint));
+    if (trimmer) {
+      const potType = trimmerPotType(footprint);
+      return {
+        mapped: {
+          record: { type: 'potentiometer', value, potType, potResistance: value || '10k' },
+          pinName: identityPins(['1', '2', '3']),
+          hint: potType === 'trimmer-3296' || id === 'trimpot' ? 'trimpot' : 'trimpot-top',
+        },
+      };
+    }
+    if (PANEL_POT_FOOTPRINT.test(footprint)) return { offboard: 'Panel pot - wire it to the edge pads' };
+    return {
+      offboard: footprint
+        ? `Unrecognised potentiometer footprint ${footprint}, treated as a panel pot - wire it to the edge pads`
+        : 'Potentiometer with no footprint name, treated as a panel pot - wire it to the edge pads',
+    };
   }
 
   if (id.startsWith('resistor')) {
@@ -128,14 +237,6 @@ function classify(component: Component, def: ComponentDefinition | undefined): C
   if (id === 'transistor' || id === 'transistor-npn' || id === 'transistor-pnp' || id === 'jfet' || id === 'mosfet-to92') {
     return { mapped: transistorMapping(def, component) };
   }
-  if (id === 'trimpot' || id === 'trimpot-top') {
-    return {
-      mapped: {
-        record: { type: 'potentiometer', value, potType: 'trimmer', potResistance: value || '10k' },
-        pinName: identityPins(['1', '2', '3']),
-      },
-    };
-  }
   if (def.footprint.type === 'DIP' && def.category === 'IC' && GENERIC_IC_PIN_COUNTS.includes(def.pins.length)) {
     return {
       mapped: {
@@ -151,13 +252,17 @@ function classify(component: Component, def: ComponentDefinition | undefined): C
     };
   }
 
-  if (id === 'potentiometer' || id === 'encoder') return { offboard: 'Panel control - wire it to the edge pads' };
-  if (id.startsWith('switch') || id.startsWith('button')) return { offboard: 'Switch - wire it to the edge pads' };
-  if (id.startsWith('header') || id.startsWith('connector')) return { offboard: 'Connector - wire it to the edge pads' };
+  // Parts that stay off the board, with the reason
+  if (JACK_FOOTPRINT.test(footprint)) return { offboard: 'Panel jack - wire it to the edge pads' };
+  if (id.startsWith('switch') || id.startsWith('button') || SWITCH_FOOTPRINT.test(footprint)) {
+    return { offboard: 'Switch - wire it to the edge pads' };
+  }
   if (id.startsWith('regulator') || id.startsWith('mosfet-to220')) {
     return { offboard: 'TO-220 part has no stripboard footprint - wire it to the edge pads' };
   }
-  if (/^(J|P|CN|TP|JP)\d/i.test(component.reference)) return { offboard: 'Connector - wire it to the edge pads' };
+  if (id.startsWith('header') || id.startsWith('connector') || /^(J|P|CN|TP|JP)\d/i.test(component.reference)) {
+    return { offboard: 'Connector with no stripboard footprint - wire it to the edge pads' };
+  }
   if (id === 'inductor') return { offboard: 'Inductors are not supported by the autorouter' };
   return { offboard: 'No stripboard footprint for this part' };
 }
@@ -197,7 +302,8 @@ export function adaptBoardToVero(
   const ordered = [...components].sort((a, b) => a.position.row - b.position.row || a.position.col - b.position.col);
   for (const component of ordered) {
     const def = defById.get(component.definitionId);
-    const result = classify(component, def);
+    const pinNet = new Map(component.pins.filter((p) => p.netId && netById.has(p.netId)).map((p) => [p.number, p.netId!]));
+    const result = classify(component, def, (pin) => pinNet.get(pin));
     const usedPins = component.pins.filter((p) => p.netId && netById.has(p.netId));
 
     if ('offboard' in result) {
@@ -229,7 +335,8 @@ export function adaptBoardToVero(
       instanceUid: `CMP-${id}`,
     });
     sources[id] = component;
-    definitionHints[id] = component.definitionId;
+    definitionHints[id] = result.mapped.hint ?? component.definitionId;
+    if (result.mapped.warning) warnings.push(result.mapped.warning);
 
     for (const pin of component.pins) {
       const logical = result.mapped.pinName(pin.number);

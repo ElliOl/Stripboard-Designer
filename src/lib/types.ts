@@ -70,6 +70,7 @@ export type Component = {
   id: string;
   reference: string; // R1, U1, C1, etc.
   value?: string; // Component value (e.g. "10k", "56pF", "NE555")
+  footprint?: string; // KiCad footprint name from the netlist, when imported
   definitionId: string; // Reference to ComponentDefinition
   position: GridPosition;
   rotation: 0 | 90 | 180 | 270;

@@ -5,6 +5,7 @@
 import { createVeroEngine } from './vero-engine.generated';
 import type { VeroEngineLayout } from './vero-engine.generated';
 import type { AutoLayoutCircuit } from './adapter';
+import { customPartOverrides } from './custom-footprint';
 import type { VeroProject } from '@/lib/vero-import';
 
 export type AutoLayoutSettings = {
@@ -50,6 +51,7 @@ export async function runVeroEngine(
       },
     },
     yieldToBrowser: () => Promise.resolve(),
+    partOverrides: customPartOverrides,
   });
   state.components = circuit.components.map((c) => engine.normalizeComponentRecord({ ...c }));
 

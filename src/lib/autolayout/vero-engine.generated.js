@@ -2039,7 +2039,7 @@ function spacedComponentDefinition(base) {
         };
       }
 
-function componentDef(componentOrType) {
+function componentDef__vero(componentOrType) {
         const rawType = typeof componentOrType === "string" ? componentOrType : componentOrType.type;
         const type = canonicalComponentType(rawType);
         if (type === "transistor" && typeof componentOrType !== "string") {
@@ -2306,7 +2306,7 @@ function newTrimmerFootprintVariants(model) {
         return variants;
       }
 
-function boardFootprintVariants(component) {
+function boardFootprintVariants__vero(component) {
         const def = componentDef(component);
 
         if (component.type === "jumper") {
@@ -6372,6 +6372,14 @@ function netRequiresVeroRepresentation(net) {
         // so no Vero copper strip or edge landing is required.
         return false;
       }
+
+function componentDef(componentOrType) {
+  return env.partOverrides?.definition?.(componentOrType) ?? componentDef__vero(componentOrType);
+}
+
+function boardFootprintVariants(component) {
+  return env.partOverrides?.footprints?.(component) ?? boardFootprintVariants__vero(component);
+}
 
   return { buildCompactXYLayout, deriveNets, attachStableNetIdentities, detachGeneratedLayoutFromSchematic, refreshManualLayoutConnectivity, validateManualVeroLayout, serializeVeroLayoutForProject, transistorLeadOrder, GENERIC_IC_PIN_COUNTS, componentDef, normalizeComponentRecord, canonicalGenericIcPinCount, uid, SCHEMATIC_WIDTH };
 }

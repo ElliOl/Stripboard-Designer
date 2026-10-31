@@ -56,3 +56,41 @@ describe('auto layout', () => {
     }
   }, 120000);
 });
+
+// A header, a board trimmer and a net tie around a small RC stage
+const HEADER_AND_TRIMMER = `(export (version "E")
+ (components
+  (comp (ref "C1") (value "100n") (footprint "Capacitor_THT:C_Disc_D5.0mm_W2.5mm_P5.00mm"))
+  (comp (ref "J1") (value "Power and signal") (footprint "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical"))
+  (comp (ref "NT1") (value "NetTie_2") (footprint "NetTie:NetTie-2_SMD_Pad2.0mm"))
+  (comp (ref "R1") (value "10k") (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"))
+  (comp (ref "R2") (value "4k7") (footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"))
+  (comp (ref "RV1") (value "10k") (footprint "Potentiometer_THT:Potentiometer_Vishay_T93YA_Vertical")))
+ (nets
+  (net (code "1") (name "+9V") (node (ref "J1") (pin "1")) (node (ref "R1") (pin "1")))
+  (net (code "2") (name "GND") (node (ref "J1") (pin "2")) (node (ref "RV1") (pin "3")) (node (ref "C1") (pin "2")) (node (ref "NT1") (pin "1")))
+  (net (code "3") (name "IN") (node (ref "J1") (pin "3")) (node (ref "R2") (pin "1")))
+  (net (code "4") (name "OUT") (node (ref "J1") (pin "4")) (node (ref "RV1") (pin "2")) (node (ref "C1") (pin "1")))
+  (net (code "5") (name "MID") (node (ref "R1") (pin "2")) (node (ref "RV1") (pin "1")) (node (ref "R2") (pin "2")))
+  (net (code "6") (name "AGND") (node (ref "NT1") (pin "2")))))`;
+
+describe('auto layout: headers and trimmers', () => {
+  it('places a pin header and a trimmer on the board and routes them', async () => {
+    const { run, result, problems, adapted } = await autoLayout(HEADER_AND_TRIMMER, 40, 24);
+    expect(run.ok).toBe(true);
+    expect(problems).toEqual([]);
+    expect(adapted.offboard).toEqual([]);
+    const byRef = new Map(result!.project.components.map((c) => [c.reference, c]));
+    // Each header pin sits on its own strip, with the header's library definition
+    const header = byRef.get('J1')!;
+    expect(header.definitionId).toBe('header-1x4');
+    expect(new Set(header.pins.map((p) => p.position.row)).size).toBe(4);
+    expect(header.pins.map((p) => p.netId).every(Boolean)).toBe(true);
+    // The trimmer keeps pin 2 as its wiper, on the OUT net
+    const trimmer = byRef.get('RV1')!;
+    expect(trimmer.definitionId).toMatch(/^trimpot/);
+    const out = result!.project.nets.find((n) => n.name === 'OUT')!;
+    expect(trimmer.pins.find((p) => p.number === '2')!.netId).toBe(out.id);
+    expect(byRef.has('NT1')).toBe(true);
+  }, 120000);
+});

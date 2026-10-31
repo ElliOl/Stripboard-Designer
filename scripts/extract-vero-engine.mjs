@@ -34,6 +34,13 @@ const ROOTS = [
   'uid',
   'SCHEMATIC_WIDTH',
 ];
+// Functions the app can override per part through `env.partOverrides`. The
+// original is kept under a new name and a wrapper takes its place, so every
+// call inside the engine sees the override and falls back to Vero's own logic.
+const OVERRIDES = {
+  componentDef: { param: 'componentOrType', hook: 'definition' },
+  boardFootprintVariants: { param: 'component', hook: 'footprints' },
+};
 // Supplied by the factory's `env` or stubbed instead of copied
 const STOPS = ['els', 'state', 'renderVero', 'yieldToBrowser', 'updateVeroEditUi'];
 
@@ -98,7 +105,19 @@ while (queue.length) {
   for (const r of refs(stmt)) queue.push(r);
 }
 const ordered = [...picked].sort((a, b) => a.start - b.start);
-const body = ordered.map((s) => src.slice(s.start, s.end)).join('\n\n');
+const renamed = (s) => {
+  const text = src.slice(s.start, s.end);
+  const name = s.type === 'FunctionDeclaration' ? s.id.name : null;
+  if (!name || !OVERRIDES[name]) return text;
+  const head = `function ${name}(`;
+  if (!text.startsWith(head)) throw new Error(`Unexpected declaration shape for ${name}`);
+  return `function ${name}__vero(` + text.slice(head.length);
+};
+const wrappers = Object.entries(OVERRIDES).map(([name, { param, hook }]) => {
+  if (!picked.has(decls.get(name))) throw new Error(`Override target not extracted: ${name}`);
+  return `function ${name}(${param}) {\n  return env.partOverrides?.${hook}?.(${param}) ?? ${name}__vero(${param});\n}`;
+});
+const body = [...ordered.map(renamed), ...wrappers].join('\n\n');
 
 // ── Emit ──
 const exported = [...new Set(ROOTS)];

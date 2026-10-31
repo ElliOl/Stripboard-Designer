@@ -35,8 +35,18 @@ export type VeroEngineState = {
   veroManualEdited: boolean;
 };
 
+/**
+ * Per-part overrides of the engine's own part definition and board footprints.
+ * Return undefined to let the engine decide.
+ */
+export type VeroPartOverrides = {
+  definition?: (componentOrType: unknown) => unknown;
+  footprints?: (component: unknown) => unknown[] | undefined;
+};
+
 export type VeroEngineEnv = {
   state: VeroEngineState;
+  partOverrides?: VeroPartOverrides;
   els: { generationProgressText: { textContent: string } | { set textContent(value: string) } };
   yieldToBrowser: (force?: boolean) => Promise<void>;
 };
