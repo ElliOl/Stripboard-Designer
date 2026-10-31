@@ -1,6 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStripboardStore } from '@/store/stripboard';
-import { AUTOSAVE_KEY, BACKUP_KEY, clearAutosave, noteCrash, restoreAutosave, saveAutosave, startAutosave } from '@/lib/autosave';
+import {
+  AUTOSAVE_KEY,
+  BACKUP_KEY,
+  NOTICE_KEY,
+  clearAutosave,
+  getAutosaveBackup,
+  getAutosaveBackups,
+  getAutosaveNotice,
+  noteCrash,
+  restoreAutosave, saveAutosave, startAutosave } from '@/lib/autosave';
 
 function installStorage(opts: { maxLength?: number } = {}) {
   const map = new Map<string, string>();
@@ -80,7 +89,8 @@ describe('autosave', () => {
     map.set(AUTOSAVE_KEY, '{"components":"abc"}');
     expect(restoreAutosave()).toBe(false);
     expect(map.has(AUTOSAVE_KEY)).toBe(false);
-    expect(map.get('stripboard-designer:autosave-backup')).toBe('{"components":"abc"}');
+    expect(getAutosaveBackup()).toBe('{"components":"abc"}');
+    expect(getAutosaveBackups()[0].reason).toBe('invalid data');
   });
 
   it('flushes a pending save when the page is hidden', () => {
@@ -115,7 +125,8 @@ describe('autosave', () => {
     expect(saved.components).toHaveLength(1);
     expect(saved.components[0].pins[0].extended).toBe(0);
     expect(saved.components[0].pins[0].netId).toBeUndefined();
-    expect(map.get(BACKUP_KEY)).toBe(raw);
+    expect(getAutosaveBackup()).toBe(raw);
+    expect(getAutosaveNotice()).toEqual({ reason: 'repaired', hasBackup: true });
   });
 
   it('sets the autosave aside after a crash and starts empty next time', () => {
@@ -126,14 +137,45 @@ describe('autosave', () => {
     const saved = map.get(AUTOSAVE_KEY)!;
     noteCrash();
     expect(map.has(AUTOSAVE_KEY)).toBe(false);
-    expect(map.get(BACKUP_KEY)).toBe(saved);
+    expect(getAutosaveBackup()).toBe(saved);
     // the crashed state must not be saved over it
     useStripboardStore.setState({ wires: [] });
     saveAutosave();
     expect(map.has(AUTOSAVE_KEY)).toBe(false);
-    expect(map.get(BACKUP_KEY)).toBe(saved);
+    expect(getAutosaveBackup()).toBe(saved);
     useStripboardStore.getState().reset();
     expect(restoreAutosave()).toBe(false);
     expect(useStripboardStore.getState().wires).toHaveLength(0);
+  });
+
+  it('keeps the last 3 backups, newest first, and never stores an empty board', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const map = installStorage();
+    const board = (id: string) =>
+      JSON.stringify({ board: { rows: 5, cols: 5 }, wires: [{ id, netId: 'n', points: [{ row: 0, col: 0 }] }] });
+    const empty = JSON.stringify({ board: { rows: 5, cols: 5 }, components: [], wires: [] });
+    for (const id of ['a', 'b', 'c', 'd']) {
+      map.set(AUTOSAVE_KEY, board(id));
+      noteCrash();
+    }
+    map.set(AUTOSAVE_KEY, empty);
+    noteCrash();
+    const list = getAutosaveBackups();
+    expect(list).toHaveLength(3);
+    expect(list.map((b) => JSON.parse(b.data).wires[0].id)).toEqual(['d', 'c', 'b']);
+    expect(list[0].reason).toBe('crash');
+    expect(getAutosaveBackup()).toBe(board('d'));
+  });
+
+  it('migrates the old single-value backup format', () => {
+    const map = installStorage();
+    map.set(BACKUP_KEY, '{"components":"abc"}');
+    expect(getAutosaveBackups()).toHaveLength(1);
+    expect(getAutosaveBackup()).toBe('{"components":"abc"}');
+    map.set(AUTOSAVE_KEY, '{"board":{"rows":5,"cols":5},"wires":[{"id":"w"}]}');
+    noteCrash();
+    expect(getAutosaveBackups()).toHaveLength(2);
+    expect(JSON.parse(map.get(BACKUP_KEY)!)).toBeInstanceOf(Array);
+    expect(map.has(NOTICE_KEY)).toBe(true);
   });
 });

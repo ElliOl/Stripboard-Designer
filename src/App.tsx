@@ -8,6 +8,12 @@ import { HotkeyLegend, GhostButton } from '@/components/HotkeyLegend';
 import { useStripboardStore } from '@/store/stripboard';
 import { processFileToReferenceImage } from '@/lib/image-import';
 import { getStripCuts } from '@/lib/strip-segments';
+import {
+  dismissAutosaveNotice,
+  downloadAutosaveBackup,
+  getAutosaveNotice,
+  hasAutosaveBackup,
+} from '@/lib/autosave';
 import '@/styles/globals.css';
 
 // Lazy load the sidebar for better initial load performance
@@ -198,6 +204,7 @@ function App() {
     <ErrorBoundary>
     <div className="w-screen h-screen flex flex-col overflow-hidden bg-[#09090b]">
       <div className="flex-1 flex overflow-hidden relative">
+        <AutosaveNotice />
         <StripboardCanvas />
         <Toolbar />
         <ZoomIsland />
@@ -211,6 +218,39 @@ function App() {
       <StatusBar />
     </div>
     </ErrorBoundary>
+  );
+}
+
+// ─── Autosave notice ─────────────────────────────────────────
+function AutosaveNotice() {
+  const [notice, setNotice] = useState(() => getAutosaveNotice());
+  if (!notice) return null;
+  const canDownload = notice.hasBackup && hasAutosaveBackup();
+  const dismiss = () => {
+    dismissAutosaveNotice();
+    setNotice(null);
+  };
+  return (
+    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-3 py-1.5 rounded-lg bg-[#1a1a22] border border-[#2a2a34] shadow-lg shadow-black/50 text-xs text-[#ededf0]">
+      <span>
+        {notice.reason === 'repaired'
+          ? 'Some damaged items were removed from your saved board.'
+          : notice.reason === 'crash'
+            ? 'Your last board caused an error and was set aside.'
+            : 'Your saved board could not be read and was set aside.'}
+      </span>
+      {canDownload && (
+        <button
+          onClick={downloadAutosaveBackup}
+          className="px-2 py-0.5 rounded bg-[#2a2a34] hover:bg-[#34343f] transition-colors"
+        >
+          Download
+        </button>
+      )}
+      <button onClick={dismiss} aria-label="Dismiss" className="text-[#8a8a9a] hover:text-[#ededf0]">
+        &times;
+      </button>
+    </div>
   );
 }
 

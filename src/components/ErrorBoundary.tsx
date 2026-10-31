@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { useStripboardStore } from '@/store/stripboard';
-import { clearAllAutosaves, noteCrash, getAutosaveBackup, hasAutosaveBackup } from '@/lib/autosave';
+import { clearAllAutosaves, noteCrash, downloadAutosaveBackup, hasAutosaveBackup } from '@/lib/autosave';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -44,8 +44,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   };
 
   private handleDownloadBackup = () => {
-    const raw = getAutosaveBackup();
-    if (raw) this.download(raw, 'stripboard-autosave-backup.json');
+    downloadAutosaveBackup();
   };
 
   private handleNewProject = () => {

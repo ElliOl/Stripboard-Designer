@@ -2,8 +2,11 @@ import { useStripboardStore } from '@/store/stripboard';
 import { sanitizeProject } from '@/lib/project-validation';
 
 export const AUTOSAVE_KEY = 'stripboard-designer:autosave';
-/** An autosave that was set aside because loading it crashed the app. */
+/** The last few autosaves that were set aside (a JSON list, newest first). */
 export const BACKUP_KEY = 'stripboard-designer:autosave-backup';
+/** A pending "your board was set aside" notice for the next page view. */
+export const NOTICE_KEY = 'stripboard-designer:autosave-notice';
+const MAX_BACKUPS = 3;
 /** Set (per tab session) while a restored autosave has not yet rendered successfully. */
 const RESTORING_KEY = 'stripboard-designer:restoring';
 const DEBOUNCE_MS = 1000;
@@ -72,7 +75,7 @@ export function noteCrash(): void {
   try {
     const raw = localStorage.getItem(AUTOSAVE_KEY);
     if (raw) {
-      localStorage.setItem(BACKUP_KEY, raw);
+      setAside(raw, 'crash');
       localStorage.removeItem(AUTOSAVE_KEY);
     }
   } catch (err) {
@@ -86,22 +89,114 @@ export function markRestoreOk(): void {
   sessionSet(RESTORING_KEY, null);
 }
 
-/** Whether a set-aside autosave exists. */
-export function hasAutosaveBackup(): boolean {
+export type BackupReason = 'crash' | 'invalid data' | 'repaired';
+export type AutosaveBackup = { t: number; reason: BackupReason; data: string };
+
+/** The set-aside autosaves, newest first. Migrates the old single-value format. */
+export function getAutosaveBackups(): AutosaveBackup[] {
   try {
-    return !!localStorage.getItem(BACKUP_KEY);
+    const raw = localStorage.getItem(BACKUP_KEY);
+    if (!raw) return [];
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
+    if (Array.isArray(parsed)) {
+      return parsed.filter(
+        (e): e is AutosaveBackup => !!e && typeof e === 'object' && typeof e.data === 'string' && typeof e.t === 'number',
+      );
+    }
+    // Old format: the project text itself
+    return [{ t: 0, reason: 'invalid data', data: raw }];
+  } catch {
+    return [];
+  }
+}
+
+/** True for a project with nothing on it, which is not worth keeping as a backup. */
+function isEmptyBoard(raw: string): boolean {
+  try {
+    const d = JSON.parse(raw);
+    if (!d || typeof d !== 'object' || Array.isArray(d)) return false;
+    const none = (v: unknown) => v === undefined || (Array.isArray(v) && v.length === 0);
+    return none(d.components) && none(d.wires);
   } catch {
     return false;
   }
 }
 
-/** The set-aside autosave text, if any. */
-export function getAutosaveBackup(): string | null {
-  try {
-    return localStorage.getItem(BACKUP_KEY);
-  } catch {
-    return null;
+/** Set an autosave aside as the newest backup (keeping the last few) and queue a notice. */
+function setAside(raw: string, reason: BackupReason): void {
+  if (isEmptyBoard(raw)) return;
+  const list = getAutosaveBackups().filter((b) => b.data !== raw);
+  list.unshift({ t: Date.now(), reason, data: raw });
+  let keep = list.slice(0, MAX_BACKUPS);
+  for (;;) {
+    try {
+      localStorage.setItem(BACKUP_KEY, JSON.stringify(keep));
+      break;
+    } catch (err) {
+      if (keep.length <= 1) {
+        console.warn('Could not keep a backup of the autosave', err);
+        return;
+      }
+      keep = keep.slice(0, -1); // storage full: drop the oldest
+    }
   }
+  setNotice(reason, true);
+}
+
+export type AutosaveNotice = { reason: BackupReason; hasBackup: boolean };
+
+function setNotice(reason: BackupReason, hasBackup: boolean): void {
+  try {
+    localStorage.setItem(NOTICE_KEY, JSON.stringify({ reason, hasBackup }));
+  } catch {
+    // no notice if storage is unavailable
+  }
+}
+
+/** The pending notice, if an autosave was set aside or repaired on this start. */
+export function getAutosaveNotice(): AutosaveNotice | null {
+  try {
+    const n = JSON.parse(localStorage.getItem(NOTICE_KEY) ?? 'null');
+    if (n && typeof n.reason === 'string') return { reason: n.reason, hasBackup: !!n.hasBackup };
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+export function dismissAutosaveNotice(): void {
+  try {
+    localStorage.removeItem(NOTICE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/** Whether a set-aside autosave exists. */
+export function hasAutosaveBackup(): boolean {
+  return getAutosaveBackups().length > 0;
+}
+
+/** The newest set-aside autosave text, if any. */
+export function getAutosaveBackup(): string | null {
+  return getAutosaveBackups()[0]?.data ?? null;
+}
+
+/** Save the newest set-aside autosave as a .json file. */
+export function downloadAutosaveBackup(): void {
+  const raw = getAutosaveBackup();
+  if (!raw) return;
+  const url = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'stripboard-autosave-backup.json';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 /** Remove the autosave, any set-aside copy and the restore flag. */
@@ -109,6 +204,7 @@ export function clearAllAutosaves(): void {
   clearAutosave();
   try {
     localStorage.removeItem(BACKUP_KEY);
+    localStorage.removeItem(NOTICE_KEY);
   } catch (err) {
     console.warn('Could not clear autosave backup', err);
   }
@@ -126,7 +222,7 @@ export function restoreAutosave(): boolean {
     if (!raw) return false;
     if (sessionGet(RESTORING_KEY)) {
       console.warn('Previous restore did not finish; setting the autosave aside');
-      localStorage.setItem(BACKUP_KEY, raw);
+      setAside(raw, 'crash');
       localStorage.removeItem(AUTOSAVE_KEY);
       sessionSet(RESTORING_KEY, null);
       return false;
@@ -140,7 +236,7 @@ export function restoreAutosave(): boolean {
     const result = sanitizeProject(data);
     if (!result) {
       console.warn('Autosave is not a valid project; setting it aside');
-      localStorage.setItem(BACKUP_KEY, raw);
+      setAside(raw, 'invalid data');
       localStorage.removeItem(AUTOSAVE_KEY);
       return false;
     }
@@ -148,7 +244,8 @@ export function restoreAutosave(): boolean {
     useStripboardStore.getState().importProject(result.project);
     if (result.dropped > 0 || result.fixed > 0) {
       // Keep the original if anything was lost, then store the repaired project
-      if (result.dropped > 0) localStorage.setItem(BACKUP_KEY, raw);
+      if (result.dropped > 0) setAside(raw, 'repaired');
+      else setNotice('repaired', false);
       saveAutosave();
     }
     return true;

@@ -174,8 +174,12 @@ export const Toolbar = () => {
         }
         if (!confirmReplaceBoard()) return;
         importProject(result.project);
-        if (result.dropped > 0) {
-          alert(`Opened the project, but ${result.dropped} damaged item${result.dropped !== 1 ? 's were' : ' was'} skipped.`);
+        if (result.dropped > 0 || result.fixed > 0) {
+          const parts = [
+            result.dropped > 0 ? `${result.dropped} damaged item${result.dropped !== 1 ? 's were' : ' was'} skipped` : '',
+            result.fixed > 0 ? `${result.fixed} ${result.fixed !== 1 ? 'were' : 'was'} repaired` : '',
+          ].filter(Boolean);
+          alert(`Opened the project, but ${parts.join(' and ')}.`);
         }
       };
       reader.readAsText(file);
