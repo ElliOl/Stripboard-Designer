@@ -314,9 +314,20 @@ const PAD_DEFINITION: ComponentDefinition = {
 
 // ─── Conversion ─────────────────────────────────────────────
 
+/** Options for converting a layout generated from this app's own board */
+export type VeroConvertOptions = {
+  /** Use these nets instead of rebuilding them from the Vero wires */
+  nets?: Net[];
+  /** Vero endpoint ("R1:2") -> net id; required with `nets` */
+  nodeNets?: Record<string, string>;
+  /** Vero part id -> library definition id to try before the defaults */
+  definitionHints?: Record<string, string>;
+};
+
 export function convertVeroProject(
   vero: VeroProject,
-  library: ComponentDefinition[]
+  library: ComponentDefinition[],
+  options: VeroConvertOptions = {}
 ): VeroImportResult {
   const layout = vero.veroLayout;
   if (!layout || !Array.isArray(layout.placements) || !layout.placements.length) {
@@ -331,7 +342,10 @@ export function convertVeroProject(
 
   const rows = layout.rows;
   const cols = layout.columns;
-  const { nets, netIdByNode } = buildNets(vero);
+  const { nets, netIdByNode } =
+    options.nets && options.nodeNets
+      ? { nets: options.nets, netIdByNode: new Map(Object.entries(options.nodeNets)) }
+      : buildNets(vero);
   const libById = new Map(library.map((d) => [d.id, d]));
   const customDefs = new Map<string, ComponentDefinition>();
   const components: Component[] = [];
@@ -354,7 +368,8 @@ export function convertVeroProject(
       return netIdByNode.get(node);
     };
 
-    const candidates = libraryCandidates(vc)
+    const hint = options.definitionHints?.[placement.componentId];
+    const candidates = [...(hint ? [hint] : []), ...libraryCandidates(vc)]
       .map((id) => libById.get(id))
       .filter((d): d is ComponentDefinition => Boolean(d));
     const match = matchLibrary(candidates, targets);

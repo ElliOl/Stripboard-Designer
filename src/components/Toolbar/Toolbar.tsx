@@ -13,6 +13,7 @@ import {
   Circle,
   Minus,
   FilePlus,
+  Wand2,
 } from 'lucide-react';
 import { useStripboardStore } from '@/store/stripboard';
 import { clearAutosave } from '@/lib/autosave';
@@ -23,6 +24,7 @@ import { isVeroProject, convertVeroProject } from '@/lib/vero-import';
 import type { ToolType, NetlistImportOptions } from '@/lib/types';
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { NetlistImportDialog } from '@/components/NetlistImportDialog';
+import { AutoLayoutDialog } from '@/components/AutoLayoutDialog';
 
 const tools: Array<{
   type: ToolType;
@@ -57,6 +59,7 @@ export const Toolbar = () => {
 
   // ─── Settings Dialog State ────────────────────────────────
   const [showSettings, setShowSettings] = useState(false);
+  const [showAutoLayout, setShowAutoLayout] = useState(false);
 
   // ─── Netlist Import Dialog State ──────────────────────────
   const [netlistImportPending, setNetlistImportPending] = useState<{
@@ -299,6 +302,12 @@ export const Toolbar = () => {
       {/* ─── Settings ──────────────────────────────────────── */}
       <div className="flex flex-col items-center px-1.5 gap-0.5">
         <ToolBtn
+          icon={Wand2}
+          onClick={() => setShowAutoLayout(true)}
+          title="Auto layout: place parts, links and cuts"
+          size={16}
+        />
+        <ToolBtn
           icon={Settings}
           onClick={() => setShowSettings(true)}
           title="Settings"
@@ -340,6 +349,8 @@ export const Toolbar = () => {
       {showSettings && (
         <SettingsDialog onClose={() => setShowSettings(false)} />
       )}
+
+      {showAutoLayout && <AutoLayoutDialog onClose={() => setShowAutoLayout(false)} />}
 
       {/* ─── Netlist Import Dialog ───────────────────────────── */}
       {netlistImportPending && (

@@ -23,6 +23,7 @@ If the schematic changes, import the netlist again and choose **Update existing 
 ### Other features
 
 - **Vero Designer projects:** open a project saved from Vero Designer and its generated layout is converted into an editable board. Off-board parts such as panel pots become labelled pads at the board edge.
+- **Auto layout:** after importing a netlist, click the wand button to place the parts, links and track cuts automatically. Parts that cannot sit on the board (panel pots, jacks, headers) become labelled edge pads. It is one undo step.
 - **Reference images:** place a photo, an image or a PDF page behind the board to trace an existing layout.
 - **Group by Connectivity:** clusters freshly imported parts by the nets they share, so related parts start out close together.
 - **Multiple boards:** split a design across several boards in one project.

@@ -6,7 +6,7 @@ module.exports = {
     'plugin:@typescript-eslint/recommended',
     'plugin:react-hooks/recommended',
   ],
-  ignorePatterns: ['dist', '.eslintrc.cjs'],
+  ignorePatterns: ['dist', 'dist-single', '.eslintrc.cjs', 'src/lib/autolayout/vero-engine.generated.js'],
   parser: '@typescript-eslint/parser',
   plugins: ['react-refresh'],
   rules: {
