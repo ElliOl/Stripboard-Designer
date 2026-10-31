@@ -150,7 +150,7 @@ Modify `src/styles/tokens.css` to customize colors, spacing, and other design as
 
 ### Component Library
 
-Add new components by editing `public/components/library.json`:
+Add new components by editing `src/data/library.json`:
 
 ```json
 {
@@ -167,7 +167,15 @@ Add new components by editing `public/components/library.json`:
 
 ## Deployment
 
-### Deploy to Vercel (Recommended)
+### Single offline HTML file
+
+```bash
+npm run build:single
+```
+
+Produces `dist-single/index.html`, one self-contained file with everything inlined. Anyone can open it directly in a browser, offline, with no install or server. Attach it to a GitHub release for easy sharing.
+
+### Deploy to Vercel
 
 ```bash
 npm install -g vercel

@@ -2,14 +2,24 @@
  * Utilities for importing images and PDFs into the reference layer.
  * Handles: raster images (png/jpg/etc.), PDFs (first page), and clipboard blobs.
  */
-import * as pdfjsLib from 'pdfjs-dist';
 import type { ReferenceImageState } from './types';
 
 // ─── PDF.js worker setup ───────────────────────────────────────
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString();
+// Loaded lazily, and the worker is spawned from an inlined blob URL so PDF
+// import also works in the single-file build opened from file://.
+let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
+
+function loadPdfjs() {
+  pdfjsPromise ??= Promise.all([
+    import('pdfjs-dist'),
+    import('pdfjs-dist/build/pdf.worker.min.mjs?raw'),
+  ]).then(([pdfjsLib, worker]) => {
+    const blob = new Blob([worker.default], { type: 'text/javascript' });
+    pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+    return pdfjsLib;
+  });
+  return pdfjsPromise;
+}
 
 const GRID_PITCH = 25.4;
 
@@ -24,7 +34,7 @@ export async function renderPdfToDataUrl(
   file: File | Blob,
   scale = 3,
 ): Promise<{ dataUrl: string; width: number; height: number }> {
-  const arrayBuffer = await file.arrayBuffer();
+  const [pdfjsLib, arrayBuffer] = await Promise.all([loadPdfjs(), file.arrayBuffer()]);
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
   const page = await pdf.getPage(1);
 

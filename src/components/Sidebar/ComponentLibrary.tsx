@@ -2,6 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import { Cpu, Zap, Radio, CircuitBoard, ChevronDown, ChevronRight, Box } from 'lucide-react';
 import { useStripboardStore } from '@/store/stripboard';
 import type { ComponentDefinition } from '@/lib/types';
+// Bundled rather than fetched so the single-file build works from file://
+import libraryData from '@/data/library.json';
 
 const categoryIcons: Record<string, React.ElementType> = {
   IC: Cpu,
@@ -33,15 +35,8 @@ export const ComponentLibrary = () => {
     if (libraryLoadedRef.current) return;
     libraryLoadedRef.current = true;
     
-    fetch('/components/library.json')
-      .then((res) => res.json())
-      .then((data: ComponentDefinition[]) => {
-        loadComponentDefinitions(data);
-        // Categories start collapsed by default
-      })
-      .catch((err) =>
-        console.error('Failed to load component library:', err)
-      );
+    loadComponentDefinitions(libraryData as ComponentDefinition[]);
+    // Categories start collapsed by default
   }, [loadComponentDefinitions]);
 
   const toggleCategory = (category: string) => {
