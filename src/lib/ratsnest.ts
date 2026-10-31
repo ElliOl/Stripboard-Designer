@@ -37,17 +37,20 @@ export function calculateRatsNest(
   // Build the PCB-aware copper graph once for all nets
   const graph = buildCopperGraph(components, strips, wires, pcbs);
 
-  for (const net of nets) {
-    // Collect all pin positions belonging to this net
-    const pinPositions: GridPosition[] = [];
-
-    for (const comp of components) {
-      for (const pin of comp.pins) {
-        if (pin.netId === net.id) {
-          pinPositions.push(pin.position);
-        }
-      }
+  // Bucket pin positions by net in one pass (component order is kept)
+  const pinsByNet = new Map<string, GridPosition[]>();
+  for (const comp of components) {
+    for (const pin of comp.pins) {
+      if (!pin.netId) continue;
+      let list = pinsByNet.get(pin.netId);
+      if (!list) pinsByNet.set(pin.netId, (list = []));
+      list.push(pin.position);
     }
+  }
+
+  for (const net of nets) {
+    // All pin positions belonging to this net
+    const pinPositions = pinsByNet.get(net.id) ?? [];
 
     if (pinPositions.length < 2) continue;
 

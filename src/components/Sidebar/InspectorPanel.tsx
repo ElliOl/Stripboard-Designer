@@ -414,9 +414,10 @@ function UnconnectedNetsPanel() {
     return calculateRatsNest(components, strips, wires, nets, pcbs);
   }, [components, strips, wires, nets, pcbs]);
 
-  const unconnectedNets = nets.filter(net => {
-    return ratsNest.some(conn => conn.netId === net.id);
-  });
+  const unconnectedNets = useMemo(() => {
+    const open = new Set(ratsNest.map((conn) => conn.netId));
+    return nets.filter((net) => open.has(net.id));
+  }, [nets, ratsNest]);
 
   const focusOnNet = (netId: string) => {
     const netPins = components.flatMap(comp =>
