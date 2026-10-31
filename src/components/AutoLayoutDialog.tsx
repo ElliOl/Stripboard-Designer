@@ -5,6 +5,18 @@ import { useStripboardStore } from '@/store/stripboard';
 import { adaptBoardToVero } from '@/lib/autolayout/adapter';
 import { startAutoLayout, type AutoLayoutJob } from '@/lib/autolayout/client';
 import { layoutToBoard } from '@/lib/autolayout/to-board';
+import {
+  enlargeBoardSize,
+  estimateBoardSize,
+  isNoFitError,
+  onBoardParts,
+  LARGE_CIRCUIT_PARTS,
+  MAX_COLUMNS,
+  MAX_ROWS,
+  MIN_COLUMNS,
+  MIN_ROWS,
+  type BoardSize,
+} from '@/lib/autolayout/board-size';
 
 interface AutoLayoutDialogProps {
   onClose: () => void;
@@ -13,7 +25,7 @@ interface AutoLayoutDialogProps {
 type Phase =
   | { name: 'form' }
   | { name: 'running'; progress: string }
-  | { name: 'error'; message: string }
+  | { name: 'error'; message: string; tried?: BoardSize }
   | { name: 'done'; wiringNotes: string[]; warnings: string[]; cols: number; rows: number };
 
 const clampInt = (value: string, min: number, max: number, fallback: number) => {
@@ -26,13 +38,15 @@ export const AutoLayoutDialog = ({ onClose }: AutoLayoutDialogProps) => {
   const nets = useStripboardStore((s) => s.nets);
   const definitions = useStripboardStore((s) => s.componentDefinitions);
 
-  const [maxColumns, setMaxColumns] = useState('40');
-  const [maxRows, setMaxRows] = useState('24');
+  const adapted = useMemo(() => adaptBoardToVero(components, nets, definitions), [components, nets, definitions]);
+  const onBoard = onBoardParts(adapted.circuit).length;
+  // Start from a size that suits the circuit; the user can change it
+  const estimate = useMemo(() => estimateBoardSize(adapted.circuit), [adapted]);
+
+  const [maxColumns, setMaxColumns] = useState(String(estimate.columns));
+  const [maxRows, setMaxRows] = useState(String(estimate.rows));
   const [phase, setPhase] = useState<Phase>({ name: 'form' });
   const job = useRef<AutoLayoutJob | null>(null);
-
-  const adapted = useMemo(() => adaptBoardToVero(components, nets, definitions), [components, nets, definitions]);
-  const onBoard = adapted.circuit.components.filter((c) => c.type !== 'terminal').length;
   const running = phase.name === 'running';
 
   const cancel = () => {
@@ -54,11 +68,13 @@ export const AutoLayoutDialog = ({ onClose }: AutoLayoutDialogProps) => {
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const generate = async () => {
-    const settings = {
-      maxColumns: clampInt(maxColumns, 8, 80, 40),
-      maxRows: clampInt(maxRows, 4, 80, 24),
-    };
+  const generate = async (size?: BoardSize) => {
+    const settings = size
+      ? { maxColumns: size.columns, maxRows: size.rows }
+      : {
+          maxColumns: clampInt(maxColumns, MIN_COLUMNS, MAX_COLUMNS, estimate.columns),
+          maxRows: clampInt(maxRows, MIN_ROWS, MAX_ROWS, estimate.rows),
+        };
     setPhase({ name: 'running', progress: 'Starting…' });
     const started = startAutoLayout(adapted.circuit, settings, (progress) =>
       setPhase({ name: 'running', progress })
@@ -68,7 +84,11 @@ export const AutoLayoutDialog = ({ onClose }: AutoLayoutDialogProps) => {
     if (job.current !== started) return; // Cancelled
     job.current = null;
     if (!result.ok) {
-      setPhase({ name: 'error', message: result.error });
+      setPhase({
+        name: 'error',
+        message: result.error,
+        tried: { columns: settings.maxColumns, rows: settings.maxRows },
+      });
       return;
     }
     try {
@@ -106,6 +126,16 @@ export const AutoLayoutDialog = ({ onClose }: AutoLayoutDialogProps) => {
     } catch (err) {
       setPhase({ name: 'error', message: err instanceof Error ? err.message : String(err) });
     }
+  };
+
+  const noFit = phase.name === 'error' && phase.tried && isNoFitError(phase.message) ? phase.tried : null;
+  const larger = noFit ? enlargeBoardSize(noFit) : null;
+
+  const tryLarger = () => {
+    if (!larger?.changed) return;
+    setMaxColumns(String(larger.size.columns));
+    setMaxRows(String(larger.size.rows));
+    void generate(larger.size);
   };
 
   const inputClass =
@@ -164,8 +194,8 @@ export const AutoLayoutDialog = ({ onClose }: AutoLayoutDialogProps) => {
                   <span>Max columns</span>
                   <input
                     type="number"
-                    min={8}
-                    max={80}
+                    min={MIN_COLUMNS}
+                    max={MAX_COLUMNS}
                     value={maxColumns}
                     disabled={running}
                     onChange={(e) => setMaxColumns(e.target.value)}
@@ -176,8 +206,8 @@ export const AutoLayoutDialog = ({ onClose }: AutoLayoutDialogProps) => {
                   <span>Max rows</span>
                   <input
                     type="number"
-                    min={4}
-                    max={80}
+                    min={MIN_ROWS}
+                    max={MAX_ROWS}
                     value={maxRows}
                     disabled={running}
                     onChange={(e) => setMaxRows(e.target.value)}
@@ -185,6 +215,9 @@ export const AutoLayoutDialog = ({ onClose }: AutoLayoutDialogProps) => {
                   />
                 </label>
               </div>
+              {onBoard > LARGE_CIRCUIT_PARTS && (
+                <p>Large circuits can take a few minutes to lay out.</p>
+              )}
               {phase.name === 'running' && (
                 <div className="flex items-center gap-2 text-[#e8e8ea]" role="status" aria-live="polite">
                   <Loader2 size={14} className="animate-spin text-[#c8ff2e] shrink-0" />
@@ -195,8 +228,21 @@ export const AutoLayoutDialog = ({ onClose }: AutoLayoutDialogProps) => {
             </>
           )}
 
-          {phase.name === 'error' && (
+          {phase.name === 'error' && !noFit && (
             <p className="text-[#ff6b6b] whitespace-pre-wrap" role="alert">{phase.message}</p>
+          )}
+
+          {phase.name === 'error' && noFit && larger && (
+            <div className="space-y-2" role="alert">
+              <p className="text-[#ff6b6b]">
+                The layout did not fit on a board of {noFit.columns} columns by {noFit.rows} rows.
+              </p>
+              <p>
+                {larger.changed
+                  ? `A larger board of ${larger.size.columns} by ${larger.size.rows} may work.`
+                  : 'This is the largest board the router can use, so the circuit does not fit. Try splitting it into smaller circuits, or move some parts off the board.'}
+              </p>
+            </div>
           )}
 
           {phase.name === 'done' && (
@@ -245,9 +291,18 @@ export const AutoLayoutDialog = ({ onClose }: AutoLayoutDialogProps) => {
               {phase.name === 'done' ? 'Close' : 'Cancel'}
             </button>
           )}
-          {(phase.name === 'form' || phase.name === 'error') && (
+          {noFit && larger?.changed && (
             <button
-              onClick={generate}
+              onClick={tryLarger}
+              className="flex items-center gap-2 px-5 py-2 rounded-lg bg-[#c8ff2e] hover:bg-[#d4ff55] text-[#0a0a0e] font-medium text-sm transition-colors"
+            >
+              <Wand2 size={15} />
+              Try a larger board
+            </button>
+          )}
+          {(phase.name === 'form' || (phase.name === 'error' && !(noFit && larger?.changed))) && (
+            <button
+              onClick={() => generate()}
               disabled={onBoard === 0}
               className="flex items-center gap-2 px-5 py-2 rounded-lg bg-[#c8ff2e] hover:bg-[#d4ff55] text-[#0a0a0e] font-medium text-sm transition-colors disabled:opacity-40"
             >
