@@ -20,6 +20,8 @@ export const SettingsDialog = ({ onClose }: SettingsDialogProps) => {
 
       {/* Dialog */}
       <div
+        role="dialog"
+        aria-modal="true"
         className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] w-[480px] rounded-xl"
         style={{
           background: 'rgba(17, 17, 20, 0.96)',

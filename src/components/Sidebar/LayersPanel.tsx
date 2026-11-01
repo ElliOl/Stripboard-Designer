@@ -95,6 +95,51 @@ const LAYERS: LayerInfo[] = [
   },
 ];
 
+/**
+ * Integer input that only commits on blur or Enter. The field may be empty
+ * while typing; out-of-range values are clamped (and shown clamped) and
+ * invalid or empty input reverts to the current value.
+ */
+const NumberField = ({
+  value, min, max, onCommit, className,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  onCommit: (v: number) => void;
+  className?: string;
+}) => {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+
+  const commit = () => {
+    const n = parseInt(text, 10);
+    if (Number.isNaN(n)) {
+      setText(String(value));
+      return;
+    }
+    const v = Math.max(min, Math.min(max, n));
+    setText(String(v));
+    if (v !== value) onCommit(v);
+  };
+
+  return (
+    <input
+      type="number"
+      min={min}
+      max={max}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit();
+        else if (e.key === 'Escape') setText(String(value));
+      }}
+      className={className}
+    />
+  );
+};
+
 export const LayersPanel = () => {
   const { 
     layerVisibility, 
@@ -114,6 +159,7 @@ export const LayersPanel = () => {
     addPCB,
     removePCB,
     updatePCB,
+    saveToHistory,
     referenceImages,
     addReferenceImage,
     updateReferenceImageById,
@@ -124,19 +170,12 @@ export const LayersPanel = () => {
   const [showBoardAccordion, setShowBoardAccordion] = useState(false);
   const [showRefAccordion, setShowRefAccordion] = useState(false);
   const [showComponentAccordion, setShowComponentAccordion] = useState(false);
-  const [tempRows, setTempRows] = useState(rows);
-  const [tempCols, setTempCols] = useState(cols);
+  const opacityDragRef = useRef(false);
   const [editingPcbId, setEditingPcbId] = useState<string | null>(null);
   const [addPcbDialogOpen, setAddPcbDialogOpen] = useState(false);
   const [deletePcbId, setDeletePcbId] = useState<string | null>(null);
   const [newPcbName, setNewPcbName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Sync temp values when actual values change
-  useEffect(() => {
-    setTempRows(rows);
-    setTempCols(cols);
-  }, [rows, cols]);
 
   const allOn = Object.values(layerVisibility).every(Boolean);
   const allOff = Object.values(layerVisibility).every((v) => !v);
@@ -160,6 +199,7 @@ export const LayersPanel = () => {
     setImporting(true);
     try {
       const refImage = await processFileToReferenceImage(file, rows, cols);
+      saveToHistory();
       addReferenceImage(refImage);
     } catch (err) {
       console.error('Failed to import reference image:', err);
@@ -287,14 +327,20 @@ export const LayersPanel = () => {
                     </span>
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => updateReferenceImageById(img.id, { visible: !img.visible })}
+                        onClick={() => {
+                          saveToHistory();
+                          updateReferenceImageById(img.id, { visible: !img.visible });
+                        }}
                         className="p-0.5 rounded hover:bg-[#1c1c22] text-[#63637a] hover:text-[#a6a6b8] transition-colors"
                         title={img.visible ? 'Hide image' : 'Show image'}
                       >
                         {img.visible ? <Eye size={12} /> : <EyeOff size={12} />}
                       </button>
                       <button
-                        onClick={() => removeReferenceImage(img.id)}
+                        onClick={() => {
+                          saveToHistory();
+                          removeReferenceImage(img.id);
+                        }}
                         className="p-0.5 rounded hover:bg-[#2a1515] text-[#ef4444]/70 hover:text-[#ef4444] transition-colors"
                         title="Remove image"
                       >
@@ -319,9 +365,17 @@ export const LayersPanel = () => {
                       max="1"
                       step="0.01"
                       value={img.opacity}
-                      onChange={(e) =>
-                        updateReferenceImageById(img.id, { opacity: parseFloat(e.target.value) })
-                      }
+                      onChange={(e) => {
+                        // One history entry per drag / key press, not per tick
+                        if (!opacityDragRef.current) {
+                          saveToHistory();
+                          opacityDragRef.current = true;
+                        }
+                        updateReferenceImageById(img.id, { opacity: parseFloat(e.target.value) });
+                      }}
+                      onPointerUp={() => { opacityDragRef.current = false; }}
+                      onKeyUp={() => { opacityDragRef.current = false; }}
+                      onBlur={() => { opacityDragRef.current = false; }}
                       className="w-full h-1 bg-[#2c2c36] rounded-lg appearance-none cursor-pointer
                         [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3
                         [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full
@@ -334,9 +388,10 @@ export const LayersPanel = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-[#a6a6b8]">Invert Colors</span>
                     <button
-                      onClick={() =>
-                        updateReferenceImageById(img.id, { inverted: !img.inverted })
-                      }
+                      onClick={() => {
+                        saveToHistory();
+                        updateReferenceImageById(img.id, { inverted: !img.inverted });
+                      }}
                       className={`
                         shrink-0 w-4 h-4 rounded-full transition-all flex items-center justify-center
                         ${
@@ -360,9 +415,10 @@ export const LayersPanel = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-[#a6a6b8]">Show On Top</span>
                     <button
-                      onClick={() =>
-                        updateReferenceImageById(img.id, { onTop: !img.onTop })
-                      }
+                      onClick={() => {
+                        saveToHistory();
+                        updateReferenceImageById(img.id, { onTop: !img.onTop });
+                      }}
                       className={`
                         shrink-0 w-4 h-4 rounded-full transition-all flex items-center justify-center
                         ${
@@ -394,6 +450,8 @@ export const LayersPanel = () => {
                   <div className="border-t border-[#1c1c22]" />
                   <button
                     onClick={() => {
+                      if (!window.confirm('Remove all reference images? You can undo this.')) return;
+                      saveToHistory();
                       clearAllReferenceImages();
                       setShowRefAccordion(false);
                     }}
@@ -650,37 +708,21 @@ export const LayersPanel = () => {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
                         <label className="text-[10px] text-[#a6a6b8] w-12">Rows:</label>
-                        <input
-                          type="number"
-                          min="10"
-                          max="100"
-                          value={tempRows}
-                          onChange={(e) => setTempRows(parseInt(e.target.value) || rows)}
-                          onBlur={() => {
-                            const validRows = Math.max(10, Math.min(100, tempRows));
-                            setTempRows(validRows);
-                            if (validRows !== rows) {
-                              setBoardSize(validRows, cols);
-                            }
-                          }}
+                        <NumberField
+                          value={rows}
+                          min={10}
+                          max={100}
+                          onCommit={(v) => setBoardSize(v, cols)}
                           className="flex-1 px-2 py-1 text-[11px] bg-[#0e0e12] border border-[#2c2c36] rounded text-[#ededf0] focus:outline-none focus:border-[#c8ff2e] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                       </div>
                       <div className="flex items-center gap-2">
                         <label className="text-[10px] text-[#a6a6b8] w-12">Cols:</label>
-                        <input
-                          type="number"
-                          min="10"
-                          max="100"
-                          value={tempCols}
-                          onChange={(e) => setTempCols(parseInt(e.target.value) || cols)}
-                          onBlur={() => {
-                            const validCols = Math.max(10, Math.min(100, tempCols));
-                            setTempCols(validCols);
-                            if (validCols !== cols) {
-                              setBoardSize(rows, validCols);
-                            }
-                          }}
+                        <NumberField
+                          value={cols}
+                          min={10}
+                          max={100}
+                          onCommit={(v) => setBoardSize(rows, v)}
                           className="flex-1 px-2 py-1 text-[11px] bg-[#0e0e12] border border-[#2c2c36] rounded text-[#ededf0] focus:outline-none focus:border-[#c8ff2e] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                       </div>
@@ -759,29 +801,21 @@ export const LayersPanel = () => {
                               <div className="space-y-1.5">
                                 <div className="flex items-center gap-2">
                                   <label className="text-[9px] text-[#63637a] w-10">Rows:</label>
-                                  <input
-                                    type="number"
-                                    min="5"
-                                    max="100"
+                                  <NumberField
                                     value={pcb.rows}
-                                    onChange={(e) => {
-                                      const newRows = Math.max(5, Math.min(100, parseInt(e.target.value) || pcb.rows));
-                                      updatePCB(pcb.id, { rows: newRows });
-                                    }}
+                                    min={5}
+                                    max={100}
+                                    onCommit={(v) => updatePCB(pcb.id, { rows: v })}
                                     className="flex-1 px-1.5 py-0.5 text-[10px] bg-[#0e0e12] border border-[#2c2c36] rounded text-[#ededf0] focus:outline-none focus:border-[#c8ff2e] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                   />
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <label className="text-[9px] text-[#63637a] w-10">Cols:</label>
-                                  <input
-                                    type="number"
-                                    min="5"
-                                    max="100"
+                                  <NumberField
                                     value={pcb.cols}
-                                    onChange={(e) => {
-                                      const newCols = Math.max(5, Math.min(100, parseInt(e.target.value) || pcb.cols));
-                                      updatePCB(pcb.id, { cols: newCols });
-                                    }}
+                                    min={5}
+                                    max={100}
+                                    onCommit={(v) => updatePCB(pcb.id, { cols: v })}
                                     className="flex-1 px-1.5 py-0.5 text-[10px] bg-[#0e0e12] border border-[#2c2c36] rounded text-[#ededf0] focus:outline-none focus:border-[#c8ff2e] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                   />
                                 </div>

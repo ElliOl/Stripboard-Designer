@@ -1,6 +1,8 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { Stage, Layer, Line, Circle, Group, Rect, Text } from 'react-konva';
-import type { KonvaEventObject } from 'konva/lib/Node';
+import type { KonvaEventObject, Node as KonvaNode } from 'konva/lib/Node';
+import type { Stage as KonvaStage } from 'konva/lib/Stage';
+import type { Layer as KonvaLayer } from 'konva/lib/Layer';
 import type { GridPosition, RatsNestConnection, Component as ComponentType, Wire as WireType, ComponentDefinition, Strip as StripType, ComponentPin } from '@/lib/types';
 import { Grid } from './Grid';
 import { Strip } from './Strip';
@@ -25,6 +27,16 @@ import {
   isWireVisible,
 } from '@/utils/viewport';
 import { getRotatedPinPositions } from '@/lib/rotation';
+import { getStripCuts } from '@/lib/strip-segments';
+import {
+  clampDropPosition,
+  clampPartToPcb,
+  findPcbAt,
+  interpretWheel,
+  pinExtents,
+  scaleHitTolerance,
+  uniqueId,
+} from '@/lib/canvas-geometry';
 
 const GRID_PITCH = 25.4;
 const DRAG_THRESHOLD = 5; // pixels in screen space before a drag starts
@@ -33,7 +45,7 @@ const DRAG_THRESHOLD = 5; // pixels in screen space before a drag starts
  * Determine the default rotation for a component.
  * All components should be placed perpendicular to strips (90°) to avoid shorting.
  */
-function getDefaultRotation(_definition: ComponentDefinition): 0 | 90 | 180 | 270 {
+function getDefaultRotation(): 0 | 90 | 180 | 270 {
   // All components should be perpendicular to strips (which run horizontally)
   return 90;
 }
@@ -125,8 +137,8 @@ function getPinDragLimits(def: ComponentDefinition): { minDist: number; maxDist:
 
 /** Walk from a Konva target node up to the Stage looking for a named
  *  component or wire Group. Returns the item ID or null. */
-function getItemIdFromTarget(target: any): string | null {
-  let node = target;
+function getItemIdFromTarget(target: KonvaNode | null): string | null {
+  let node: KonvaNode | null = target;
   while (node && node !== node.getStage()) {
     const name: string = node.name?.() || '';
     if (name.startsWith('component:')) return name.slice('component:'.length);
@@ -138,6 +150,26 @@ function getItemIdFromTarget(target: any): string | null {
   return null;
 }
 
+/** True when the target is a Transformer or one of its anchors/border. */
+function isTransformerTarget(target: KonvaNode | null): boolean {
+  let node: KonvaNode | null = target;
+  while (node && node !== node.getStage()) {
+    if (node.className === 'Transformer') return true;
+    node = node.parent;
+  }
+  return false;
+}
+
+/** Reuse the previous array while its elements are unchanged. */
+function useStableArray<T>(next: T[]): T[] {
+  const ref = useRef(next);
+  const prev = ref.current;
+  if (prev !== next && !(prev.length === next.length && prev.every((v, i) => v === next[i]))) {
+    ref.current = next;
+  }
+  return ref.current;
+}
+
 export const StripboardCanvas = () => {
   // Individual selectors to minimize rerenders
   const strips = useStripboardStore((s) => s.strips);
@@ -147,8 +179,6 @@ export const StripboardCanvas = () => {
   const pcbs = useStripboardStore((s) => s.pcbs);
   const zoom = useStripboardStore((s) => s.zoom);
   const pan = useStripboardStore((s) => s.pan);
-  const rows = useStripboardStore((s) => s.rows);
-  const cols = useStripboardStore((s) => s.cols);
   const showRatsNest = useStripboardStore((s) => s.showRatsNest);
   const layerVisibility = useStripboardStore((s) => s.layerVisibility);
   const highlightedNetId = useStripboardStore((s) => s.highlightedNetId);
@@ -180,15 +210,16 @@ export const StripboardCanvas = () => {
   const rotateComponent = useStripboardStore((s) => s.rotateComponent);
   const removeComponent = useStripboardStore((s) => s.removeComponent);
   const updateReferenceImage = useStripboardStore((s) => s.updateReferenceImage);
+  const clearReferenceImage = useStripboardStore((s) => s.clearReferenceImage);
+  const undo = useStripboardStore((s) => s.undo);
   const updateReferenceImageById = useStripboardStore((s) => s.updateReferenceImageById);
   const copySelected = useStripboardStore((s) => s.copySelected);
-  const paste = useStripboardStore((s) => s.paste);
   const moveComponentPin = useStripboardStore((s) => s.moveComponentPin);
   const finalizePinDrag = useStripboardStore((s) => s.finalizePinDrag);
 
-  const stageRef = useRef<any>(null);
-  const cachedComponentLayerRef = useRef<any>(null); // Cached background components
-  const activeComponentLayerRef = useRef<any>(null); // Active/selected components (uncached)
+  const stageRef = useRef<KonvaStage>(null);
+  const cachedComponentLayerRef = useRef<KonvaLayer>(null); // Cached background components
+  const activeComponentLayerRef = useRef<KonvaLayer>(null); // Active/selected components (uncached)
   const containerRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 });
 
@@ -201,14 +232,23 @@ export const StripboardCanvas = () => {
 
   // ─── Interaction State ──────────────────────────────────────
   const interactionRef = useRef<InteractionState>(null);
-  const [selectionBox, setSelectionBox] = useState<{
+  const [selectionBox, setSelectionBoxState] = useState<{
     x1: number;
     y1: number;
     x2: number;
     y2: number;
   } | null>(null);
+  const setSelectionBox = useCallback((box: typeof selectionBox) => {
+    selectionBoxRef.current = box;
+    setSelectionBoxState(box);
+  }, []);
   const [isDragging, setIsDragging] = useState(false); // Track dragging state for cache control
-  const selectionBoxCleanupRef = useRef<(() => void) | null>(null); // Cleanup for selection box document listeners
+  const selectionBoxRef = useRef<typeof selectionBox>(null); // Latest box, readable without a state updater
+  const selectionBoxCleanupRef = useRef<(() => void) | null>(null); // Cleanup for document-level drag listeners
+  const dragHistorySavedRef = useRef(false); // History entry pushed for the current drag
+  const panMovedRef = useRef(false); // Pan tool: pointer moved since mousedown
+  const finishInteractionRef = useRef<() => void>(() => {});
+  const cancelInteractionRef = useRef<() => void>(() => {});
 
   // ─── Context Menu & Edit Dialog ───────────────────────────
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -369,7 +409,7 @@ export const StripboardCanvas = () => {
   // SMART LAYER SEPARATION:
   // Split components into cached (background) and active (selected) for optimal performance
   // CRITICAL: Selected components must ALWAYS render, even when componentOpacity < 0.15
-  const { backgroundComponents, activeComponents } = useMemo(() => {
+  const { backgroundComponents: backgroundComponentsRaw, activeComponents } = useMemo(() => {
     const selectedComponentIds = new Set(
       selectedItems.filter(id => {
         // Component IDs start with 'comp-'
@@ -392,6 +432,10 @@ export const StripboardCanvas = () => {
       activeComponents: renderableComponents.filter(c => selectedComponentIds.has(c.id))
     };
   }, [renderableComponents, selectedItems, componentOpacity]);
+
+  // Keep the same array identity while its parts are unchanged so panning
+  // doesn't re-cache, but any edit to an unselected part does.
+  const backgroundComponents = useStableArray(backgroundComponentsRaw);
 
   // LAYER CACHING FOR BACKGROUND:
   // Cache the background layer (unselected components) when dimmed
@@ -433,7 +477,7 @@ export const StripboardCanvas = () => {
       layer.opacity(1);
       layer.batchDraw();
     }
-  }, [componentOpacity, backgroundComponents.length, highlightedNetId, selectedItems, isDragging]);
+  }, [componentOpacity, backgroundComponents, highlightedNetId, selectedItems, isDragging, zoom]);
 
   // ACTIVE LAYER ALWAYS AT FULL OPACITY:
   // Selected components must be bright for interaction
@@ -471,13 +515,14 @@ export const StripboardCanvas = () => {
     setWirePreviewPoint(null);
     interactionRef.current = null;
     setSelectionBox(null);
+    setIsDragging(false);
     
-    // Clean up selection box listeners if tool changes
+    // Clean up drag listeners if tool changes
     if (selectionBoxCleanupRef.current) {
       selectionBoxCleanupRef.current();
       selectionBoxCleanupRef.current = null;
     }
-  }, [activeTool]);
+  }, [activeTool, setSelectionBox]);
 
   // Clean up selection box listeners on unmount
   useEffect(() => {
@@ -492,29 +537,28 @@ export const StripboardCanvas = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if typing in an input field
+      const t = e.target;
       if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLTextAreaElement ||
+        t instanceof HTMLSelectElement ||
+        (t instanceof HTMLElement && t.isContentEditable)
       ) {
         return;
       }
+      // Ignore while a modal dialog is open
+      if (document.querySelector('[aria-modal="true"]')) return;
 
       // Copy: Cmd/Ctrl+C
       if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
         e.preventDefault();
         copySelected();
       }
-
-      // Paste: Cmd/Ctrl+V
-      if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
-        e.preventDefault();
-        paste();
-      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [copySelected, paste]);
+  }, [copySelected]);
 
   // ─── Resize ────────────────────────────────────────────────
   useEffect(() => {
@@ -594,7 +638,7 @@ export const StripboardCanvas = () => {
       const ids: string[] = [];
 
       // Check components — all pins must be inside the box
-      for (const comp of components) {
+      for (const comp of layerVisibility.components ? components : []) {
         const allPinsInside = comp.pins.every((pin) => {
           const px = pin.position.col * GRID_PITCH;
           const py = pin.position.row * GRID_PITCH;
@@ -604,7 +648,7 @@ export const StripboardCanvas = () => {
       }
 
       // Check wires — all waypoints must be inside the box
-      for (const wire of wires) {
+      for (const wire of layerVisibility.wires ? wires : []) {
         const allPointsInside = wire.points.every((p) => {
           const px = p.col * GRID_PITCH;
           const py = p.row * GRID_PITCH;
@@ -614,27 +658,13 @@ export const StripboardCanvas = () => {
       }
 
       // Check cuts — each cut is a single point (row, col)
-      for (const strip of strips) {
+      for (const strip of layerVisibility.strips && layerVisibility.cuts ? strips : []) {
         // Find the PCB this strip belongs to for world coordinate conversion
         const pcb = pcbs.find(p => strip.pcbId === p.id) || pcbs.find(p => p.isMain);
         const pcbPosition = pcb ? pcb.position : { row: 0, col: 0 };
         const worldRow = strip.row + pcbPosition.row;
         
-        // Merge cuts array with old breaks array using Map for deduplication
-        const cutsArray = strip.cuts || [];
-        const breaksArray = strip.breaks || [];
-        
-        const cutsByCol = new Map();
-        cutsArray.forEach(cut => {
-          cutsByCol.set(cut.col, cut);
-        });
-        breaksArray.forEach(col => {
-          if (!cutsByCol.has(col)) {
-            cutsByCol.set(col, { col, type: 'drill' as const });
-          }
-        });
-        
-        const allCuts = Array.from(cutsByCol.values());
+        const allCuts = getStripCuts(strip);
         
         for (const cut of allCuts) {
           // Convert local column to world column for position check and ID
@@ -649,7 +679,15 @@ export const StripboardCanvas = () => {
       }
 
       // Check reference image — all four corners must be inside the box
-      const ref = useStripboardStore.getState().referenceImage;
+      const { referenceImage: ref, referenceImages: refImgs } = useStripboardStore.getState();
+      for (const img of refImgs) {
+        if (!img.visible) continue;
+        const iw = img.naturalWidth * img.scale;
+        const ih = img.naturalHeight * img.scale;
+        if (img.x >= minX && img.x + iw <= maxX && img.y >= minY && img.y + ih <= maxY) {
+          ids.push(img.id);
+        }
+      }
       if (ref && ref.visible) {
         const rw = ref.naturalWidth * ref.scale;
         const rh = ref.naturalHeight * ref.scale;
@@ -663,7 +701,7 @@ export const StripboardCanvas = () => {
 
       return ids;
     },
-    [components, wires, strips]
+    [components, wires, strips, pcbs, layerVisibility]
   );
 
   // ─── Reference Prefix ─────────────────────────────────────
@@ -689,8 +727,7 @@ export const StripboardCanvas = () => {
   // ─── ZOOM / PAN (Wheel) ────────────────────────────────────
   // Matches KiCad defaults:
   //   Plain scroll / two-finger vertical swipe → Zoom
-  //   Shift + scroll → Pan up/down
-  //   Cmd + scroll → Pan left/right
+  //   Shift / Cmd + scroll, or horizontal two-finger scroll → Pan left/right
   //   Pinch-to-zoom (browser sends ctrlKey) → Zoom
   //
   // Reads latest state from store (not render closure) to avoid
@@ -705,25 +742,16 @@ export const StripboardCanvas = () => {
     const evt = e.evt;
     const { pan: curPan, zoom: curZoom } = useStripboardStore.getState();
 
-    if (evt.shiftKey && !evt.metaKey && !evt.ctrlKey) {
-      // Shift + scroll → pan up/down
-      setPan({ x: curPan.x, y: curPan.y - evt.deltaY });
-    } else if (evt.metaKey && !evt.shiftKey) {
-      // Cmd + scroll → pan left/right
-      setPan({ x: curPan.x - evt.deltaY, y: curPan.y });
-    } else {
-      // Plain scroll or Ctrl (pinch gesture) → zoom at cursor.
-      // Use delta-proportional factor so small trackpad gestures are
-      // gentle while larger mouse-wheel steps are more noticeable.
-      // Pinch gestures (ctrlKey) send small deltas, so use higher gain.
-      const sensitivity = evt.ctrlKey ? 0.01 : 0.003;
-      const factor = Math.exp(-evt.deltaY * sensitivity);
-
+    const action = interpretWheel(evt, stage.height());
+    if (action.kind === 'pan') {
+      setPan({ x: curPan.x + action.dx, y: curPan.y + action.dy });
+    } else if (action.kind === 'zoom') {
+      // Zoom at cursor (pointer-anchored).
       const mousePointTo = {
         x: (pointer.x - curPan.x) / curZoom,
         y: (pointer.y - curPan.y) / curZoom,
       };
-      const newZoom = Math.max(0.15, Math.min(5, curZoom * factor));
+      const newZoom = Math.max(0.15, Math.min(5, curZoom * action.factor));
       setZoom(newZoom);
       setPan({
         x: pointer.x - mousePointTo.x * newZoom,
@@ -774,17 +802,16 @@ export const StripboardCanvas = () => {
       const itemId = getItemIdFromTarget(e.target);
       if (itemId) {
         const comp = components.find((c) => c.id === itemId);
-        if (comp) {
+        const img =
+          referenceImages.find((img) => img.id === itemId) ||
+          (itemId === REF_IMAGE_ID && referenceImage ? referenceImage : undefined);
+        if (comp || img) {
+          // Menu actions act on the clicked item: select it if it isn't selected
+          if (!useStripboardStore.getState().selectedItems.includes(itemId)) {
+            setSelectedItems([itemId]);
+          }
           rightClickedRef.current = itemId;
           // Stop propagation so the container handler doesn't start panning
-          evt.stopPropagation();
-          return;
-        }
-        
-        // Check if it's a reference image
-        const img = referenceImages.find((img) => img.id === itemId);
-        if (img) {
-          rightClickedRef.current = itemId;
           evt.stopPropagation();
           return;
         }
@@ -795,6 +822,9 @@ export const StripboardCanvas = () => {
 
     if (evt.button !== 0) return; // Only handle left button from here on
 
+    // Dragging a Transformer handle must not start a box-select / deselect
+    if (isTransformerTarget(e.target)) return;
+
     // ── Pan tool: left-click pans ─────────────────────────
     if (activeTool === 'pan') {
       const startX = evt.clientX;
@@ -803,7 +833,11 @@ export const StripboardCanvas = () => {
       const startPanX = currentPan.x;
       const startPanY = currentPan.y;
 
+      panMovedRef.current = false;
       const onMove = (me: MouseEvent) => {
+        if (Math.hypot(me.clientX - startX, me.clientY - startY) >= DRAG_THRESHOLD) {
+          panMovedRef.current = true;
+        }
         setPan({
           x: startPanX + me.clientX - startX,
           y: startPanY + me.clientY - startY,
@@ -874,6 +908,7 @@ export const StripboardCanvas = () => {
 
       // Save history once at the start of the drag
       saveToHistory();
+      dragHistorySavedRef.current = true;
       
       // Determine mode: if there's already a cut here, we'll be removing; otherwise adding
       const cuts = strip.cuts || [];
@@ -899,6 +934,7 @@ export const StripboardCanvas = () => {
         lastGridCol: grid.col,
         visitedPositions,
       };
+      registerDragListeners();
       return;
     }
   };
@@ -927,6 +963,13 @@ export const StripboardCanvas = () => {
     const interaction = interactionRef.current;
     if (!interaction) return;
 
+    // Button was released somewhere we didn't see it: end the gesture
+    if ((evt.buttons & 1) === 0) {
+      if (interaction.type === 'pending') interactionRef.current = null;
+      else finishInteractionRef.current();
+      return;
+    }
+
     const stage = stageRef.current;
     const pointer = stage?.getPointerPosition();
     if (!pointer) return;
@@ -954,57 +997,16 @@ export const StripboardCanvas = () => {
           y2: content.y,
         });
 
-        // Set up document-level listeners to handle mouse leaving the window
+        // Document-level listeners so the box keeps tracking outside the canvas
         const handleDocumentMouseMove = (moveEvt: MouseEvent) => {
           const stage = stageRef.current;
-          if (!stage) return;
-
-          // Get pointer position from the event on the document
-          // We need to calculate the position relative to the stage container
-          const container = stage.container();
-          const rect = container.getBoundingClientRect();
-          
-          // Calculate pointer position relative to stage
-          const stagePointerX = moveEvt.clientX - rect.left;
-          const stagePointerY = moveEvt.clientY - rect.top;
-          
-          const content = pointerToContent(stagePointerX, stagePointerY);
-          setSelectionBox((prev) =>
-            prev ? { ...prev, x2: content.x, y2: content.y } : null
-          );
+          const prev = selectionBoxRef.current;
+          if (!stage || !prev) return;
+          const rect = stage.container().getBoundingClientRect();
+          const c = pointerToContent(moveEvt.clientX - rect.left, moveEvt.clientY - rect.top);
+          setSelectionBox({ ...prev, x2: c.x, y2: c.y });
         };
-
-        const completeSelection = () => {
-          const interaction = interactionRef.current;
-          if (interaction?.type === 'selectionBox') {
-            // Get the current selection box using a callback to ensure we have the latest value
-            setSelectionBox((currentBox) => {
-              if (currentBox) {
-                const enclosedIds = getItemsInSelectionBox(currentBox);
-                if (interaction.shiftKey) {
-                  addToSelection(enclosedIds);
-                } else if (interaction.metaKey) {
-                  removeFromSelection(enclosedIds);
-                } else {
-                  setSelectedItems(enclosedIds);
-                }
-              }
-              return null; // Clear the selection box
-            });
-          }
-          interactionRef.current = null;
-          
-          // Clean up listeners
-          document.removeEventListener('mousemove', handleDocumentMouseMove);
-          document.removeEventListener('mouseup', completeSelection);
-          selectionBoxCleanupRef.current = null;
-        };
-
-        document.addEventListener('mousemove', handleDocumentMouseMove);
-        document.addEventListener('mouseup', completeSelection);
-        
-        // Store cleanup function
-        selectionBoxCleanupRef.current = completeSelection;
+        registerDragListeners(handleDocumentMouseMove);
       } else {
         // ── Clicked on an item → check for PIN DRAG or MULTI-DRAG ──
         const itemId = interaction.clickedItemId;
@@ -1021,7 +1023,7 @@ export const StripboardCanvas = () => {
           // on multi-pin components like TO-92 from hijacking drag)
           const clickPxX = interaction.startContentX;
           const clickPxY = interaction.startContentY;
-          const PIN_HIT_RADIUS = GRID_PITCH * 0.3;
+          const PIN_HIT_RADIUS = scaleHitTolerance(GRID_PITCH * 0.3, useStripboardStore.getState().zoom);
           let closestPinIdx = -1;
           let closestPinDist = Infinity;
           clickedComp.pins.forEach((p, i) => {
@@ -1038,7 +1040,7 @@ export const StripboardCanvas = () => {
             if (!currentSelected.includes(itemId)) {
               setSelectedItems([itemId]);
             }
-            saveToHistory();
+            dragHistorySavedRef.current = false;
             interactionRef.current = {
               type: 'pinDragging',
               componentId: clickedComp.id,
@@ -1047,6 +1049,7 @@ export const StripboardCanvas = () => {
               lastGridCol: clickedComp.pins[closestPinIdx].position.col,
             };
             setIsDragging(true);
+            registerDragListeners();
             return;
           }
         }
@@ -1060,8 +1063,8 @@ export const StripboardCanvas = () => {
           }
         }
 
-        // Save history for undo before drag begins
-        saveToHistory();
+        // History is saved lazily on the first real move
+        dragHistorySavedRef.current = false;
 
         const startGrid = {
           row: Math.round(interaction.startContentY / GRID_PITCH),
@@ -1078,6 +1081,7 @@ export const StripboardCanvas = () => {
         
         // Set dragging state to disable caching for real-time updates
         setIsDragging(true);
+        registerDragListeners();
       }
       return;
     }
@@ -1085,11 +1089,8 @@ export const StripboardCanvas = () => {
     // ── Active SELECTION BOX → update dimensions ────────────
     if (interaction.type === 'selectionBox') {
       const content = pointerToContent(pointer.x, pointer.y);
-      setSelectionBox((prev) =>
-        prev
-          ? { ...prev, x2: content.x, y2: content.y }
-          : null
-      );
+      const prevBox = selectionBoxRef.current;
+      if (prevBox) setSelectionBox({ ...prevBox, x2: content.x, y2: content.y });
       return;
     }
 
@@ -1110,6 +1111,7 @@ export const StripboardCanvas = () => {
         const dx = content.x - interaction.lastContentX;
         const dy = content.y - interaction.lastContentY;
         if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+          ensureDragHistory();
           selectedRefImages.forEach((imgId) => {
             const img = currentRefImages.find((i) => i.id === imgId);
             if (img) {
@@ -1128,6 +1130,7 @@ export const StripboardCanvas = () => {
         const deltaCol = newGridCol - interaction.lastGridCol;
 
         if (deltaRow !== 0 || deltaCol !== 0) {
+          ensureDragHistory();
           moveSelectedItems(deltaRow, deltaCol);
           interaction.lastGridRow = newGridRow;
           interaction.lastGridCol = newGridCol;
@@ -1167,6 +1170,7 @@ export const StripboardCanvas = () => {
               return d < limits.minDist - 0.01 || (p.position.row === newGridRow && p.position.col === newGridCol);
             });
             if (!tooFar && !tooClose) {
+              ensureDragHistory();
               moveComponentPin(interaction.componentId, interaction.pinIndex, {
                 row: newGridRow,
                 col: newGridCol,
@@ -1234,21 +1238,49 @@ export const StripboardCanvas = () => {
     }
   };
 
-  // ─── MOUSE UP (Konva — left button) ───────────────────────
-  const handleMouseUp = (e: KonvaEventObject<MouseEvent>) => {
-    const evt = e.evt;
-    if (evt.button !== 0) return;
-
-    const interaction = interactionRef.current;
-    
-    // Clean up selection box document listeners if they exist
-    if (selectionBoxCleanupRef.current) {
-      selectionBoxCleanupRef.current();
-      selectionBoxCleanupRef.current = null;
+  // ─── Drag helpers ──────────────────────────────────────────
+  /** Push one history entry at the first real change of a drag. */
+  const ensureDragHistory = () => {
+    if (!dragHistorySavedRef.current) {
+      saveToHistory();
+      dragHistorySavedRef.current = true;
     }
-    
-    interactionRef.current = null;
+  };
 
+  /** Document-level listeners so a drag ends even if the mouse is released
+   *  outside the canvas or the window loses focus, and Escape cancels it. */
+  const registerDragListeners = (onMove?: (e: MouseEvent) => void) => {
+    selectionBoxCleanupRef.current?.();
+    const onUp = (ev: MouseEvent) => {
+      if (ev.button === 0) finishInteractionRef.current();
+    };
+    const onBlur = () => finishInteractionRef.current();
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        ev.stopPropagation(); // keep App's global Escape (deselectAll) from running
+        cancelInteractionRef.current();
+      }
+    };
+    if (onMove) document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('keydown', onKey, { capture: true });
+    selectionBoxCleanupRef.current = () => {
+      if (onMove) document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('keydown', onKey, { capture: true });
+    };
+  };
+
+  /** Finish the current interaction. Safe to call more than once: only the
+   *  first call sees an interaction. */
+  const finishInteraction = () => {
+    const interaction = interactionRef.current;
+    interactionRef.current = null;
+    selectionBoxCleanupRef.current?.();
+    selectionBoxCleanupRef.current = null;
     if (!interaction) return;
 
     // ── Pending (no drag occurred) → treat as CLICK ──────
@@ -1256,26 +1288,24 @@ export const StripboardCanvas = () => {
       if (activeTool === 'select') {
         const itemId = interaction.clickedItemId;
         if (itemId === null) {
-          // Clicked empty space → deselect all
           deselectAll();
         } else if (interaction.shiftKey) {
-          // Shift+click → add to selection
           addToSelection([itemId]);
         } else if (interaction.metaKey) {
-          // Cmd/Ctrl+click → remove from selection
           removeFromSelection([itemId]);
         } else {
-          // Plain click → replace selection
           setSelectedItems([itemId]);
         }
       }
       return;
     }
 
-    // ── Selection box complete → apply selection ─────────
+    // ── Selection box complete → apply selection (once) ──
     if (interaction.type === 'selectionBox') {
-      if (selectionBox) {
-        const enclosedIds = getItemsInSelectionBox(selectionBox);
+      const box = selectionBoxRef.current;
+      setSelectionBox(null);
+      if (box) {
+        const enclosedIds = getItemsInSelectionBox(box);
         if (interaction.shiftKey) {
           addToSelection(enclosedIds);
         } else if (interaction.metaKey) {
@@ -1284,29 +1314,50 @@ export const StripboardCanvas = () => {
           setSelectedItems(enclosedIds);
         }
       }
-      setSelectionBox(null);
       return;
     }
 
-    // ── Drag complete → nothing more to do ──────────────
     if (interaction.type === 'dragging') {
-      // History was saved at drag start; drag is done.
       setIsDragging(false); // Re-enable caching
       return;
     }
 
-    // ── Pin drag complete → finalize definition ─────────
     if (interaction.type === 'pinDragging') {
-      finalizePinDrag(interaction.componentId);
+      if (dragHistorySavedRef.current) finalizePinDrag(interaction.componentId);
       setIsDragging(false);
       return;
     }
+    // cutDragging: cuts were applied during the drag.
+  };
 
-    // ── Cut dragging complete → nothing more to do ──────
-    if (interaction.type === 'cutDragging') {
-      // History was saved at drag start; cuts/removals applied during drag.
+  /** Escape: abandon the drag and restore the pre-drag state. */
+  const cancelInteraction = () => {
+    const interaction = interactionRef.current;
+    interactionRef.current = null;
+    selectionBoxCleanupRef.current?.();
+    selectionBoxCleanupRef.current = null;
+    if (!interaction) return;
+    if (interaction.type === 'selectionBox') {
+      setSelectionBox(null);
       return;
     }
+    if (interaction.type === 'pending') return;
+    if (dragHistorySavedRef.current) {
+      const sel = useStripboardStore.getState().selectedItems;
+      undo();
+      setSelectedItems(sel);
+    }
+    dragHistorySavedRef.current = false;
+    setIsDragging(false);
+  };
+
+  finishInteractionRef.current = finishInteraction;
+  cancelInteractionRef.current = cancelInteraction;
+
+  // ─── MOUSE UP (Konva — left button) ───────────────────────
+  const handleMouseUp = (e: KonvaEventObject<MouseEvent>) => {
+    if (e.evt.button !== 0) return;
+    finishInteraction();
   };
 
   // ─── CLICK (non-select tools: wire routing, cut strip, etc.) ──
@@ -1314,8 +1365,15 @@ export const StripboardCanvas = () => {
     // Select tool is fully handled by mousedown/mouseup
     if (activeTool === 'select') return;
 
-    // Pan tool: click empty space → deselect
+    // Only the left button places waypoints / deselects
+    if (e.evt.button !== 0) return;
+
+    // Pan tool: click empty space → deselect (not after a pan drag)
     if (activeTool === 'pan') {
+      if (panMovedRef.current) {
+        panMovedRef.current = false;
+        return;
+      }
       if (e.target === e.target.getStage()) {
         deselectAll();
       }
@@ -1373,13 +1431,12 @@ export const StripboardCanvas = () => {
     const sy = e.clientY - rect.top;
     const raw = screenToGrid(sx, sy);
 
-    // Clamp so all pins fit on the board
-    const maxPinRow = Math.max(...def.pins.map((p) => p.position.row));
-    const maxPinCol = Math.max(...def.pins.map((p) => p.position.col));
-    const pos: GridPosition = {
-      row: Math.max(0, Math.min(rows - 1 - maxPinRow, raw.row)),
-      col: Math.max(0, Math.min(cols - 1 - maxPinCol, raw.col)),
-    };
+    // Rotation and pin offsets first, so the clamp uses the real extents
+    const rotation = getDefaultRotation();
+    const rotatedPinPositions = getRotatedPinPositions(def.pins, rotation);
+
+    // Clamp inside the PCB under the cursor; drop unclamped over no PCB
+    const pos: GridPosition = clampDropPosition(pcbs, raw, pinExtents(rotatedPinPositions));
 
     // Generate reference
     const prefix = getRefPrefix(def.id, def.category);
@@ -1390,15 +1447,9 @@ export const StripboardCanvas = () => {
       .filter((n) => !isNaN(n));
     const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
 
-    // Determine appropriate rotation for this component
-    const rotation = getDefaultRotation(def);
-    
-    // Get rotated pin positions
-    const rotatedPinPositions = getRotatedPinPositions(def.pins, rotation);
-
     saveToHistory();
     addComponent({
-      id: `comp-${Date.now()}`,
+      id: uniqueId('comp'),
       reference: `${prefix}${nextNum}`,
       definitionId: def.id,
       position: pos,
@@ -1440,7 +1491,9 @@ export const StripboardCanvas = () => {
         }
         
         // Check if it's a reference image
-        const img = referenceImages.find((img) => img.id === itemId);
+        const img =
+          referenceImages.some((img) => img.id === itemId) ||
+          (itemId === REF_IMAGE_ID && !!referenceImage);
         if (img) {
           setImageContextMenu({
             imageId: itemId,
@@ -1454,7 +1507,7 @@ export const StripboardCanvas = () => {
         rightClickedRef.current = null;
       }
     },
-    [components, referenceImages]
+    [components, referenceImages, referenceImage]
   );
 
   // ─── Context Menu Actions ─────────────────────────────────
@@ -1466,7 +1519,8 @@ export const StripboardCanvas = () => {
       return;
     }
     
-    const selectedComps = components.filter((c) => selectedItems.includes(c.id));
+    const currentSelected = useStripboardStore.getState().selectedItems;
+    const selectedComps = components.filter((c) => currentSelected.includes(c.id));
     const sameTypeComps = selectedComps.filter((c) => c.definitionId === comp.definitionId);
     
     // If multiple components of same type are selected, edit them all
@@ -1475,14 +1529,14 @@ export const StripboardCanvas = () => {
     } else {
       setEditingComponentIds([id]);
     }
-  }, [components, selectedItems]);
+  }, [components]);
 
   const handleRotateComponent = useCallback(
     (id: string) => {
-      saveToHistory();
+      // rotateComponent pushes its own history entry
       rotateComponent(id);
     },
-    [saveToHistory, rotateComponent]
+    [rotateComponent]
   );
 
   const handleDeleteComponent = useCallback(
@@ -1511,15 +1565,28 @@ export const StripboardCanvas = () => {
         .filter((n) => !isNaN(n));
       const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
 
-      // Place duplicate offset by 2 grid positions
-      const newPos = {
+      // Place duplicate offset by 2 grid positions, kept inside its PCB
+      let newPos = {
         row: comp.position.row + 2,
         col: comp.position.col + 2,
       };
+      const pcb = findPcbAt(pcbs, comp.position.row, comp.position.col);
+      if (pcb) {
+        newPos = clampPartToPcb(
+          newPos,
+          pinExtents(
+            comp.pins.map((p) => ({
+              row: p.position.row - comp.position.row,
+              col: p.position.col - comp.position.col,
+            }))
+          ),
+          pcb
+        );
+      }
 
       saveToHistory();
       addComponent({
-        id: `comp-${Date.now()}`,
+        id: uniqueId('comp'),
         reference: `${prefix}${nextNum}`,
         value: comp.value,
         definitionId: comp.definitionId,
@@ -1536,7 +1603,7 @@ export const StripboardCanvas = () => {
         })),
       });
     },
-    [components, componentDefinitions, saveToHistory, addComponent]
+    [components, componentDefinitions, pcbs, saveToHistory, addComponent]
   );
 
   const handleResetToDefault = useCallback(
@@ -1587,11 +1654,16 @@ export const StripboardCanvas = () => {
 
   const handleDeleteImage = useCallback(
     (id: string) => {
-      saveToHistory();
-      const { removeReferenceImage } = useStripboardStore.getState();
-      removeReferenceImage(id);
+      // The menu saves history before calling this
+      if (id === REF_IMAGE_ID) {
+        clearReferenceImage();
+        const st = useStripboardStore.getState();
+        st.setSelectedItems(st.selectedItems.filter((x) => x !== id));
+        return;
+      }
+      useStripboardStore.getState().removeReferenceImage(id);
     },
-    [saveToHistory]
+    [clearReferenceImage]
   );
 
   // ─── Computed ──────────────────────────────────────────────
@@ -1680,23 +1752,9 @@ export const StripboardCanvas = () => {
               // Convert strip's local row to world row
               const worldRow = s.row + pcbPosition.row;
               
-              // Merge cuts array with old breaks array for backward compatibility
-              const cutsArray = s.cuts || [];
-              const breaksArray = s.breaks || [];
+              const allCuts = getStripCuts(s);
               
-              const cutsByCol = new Map();
-              cutsArray.forEach(cut => {
-                cutsByCol.set(cut.col, cut);
-              });
-              breaksArray.forEach(col => {
-                if (!cutsByCol.has(col)) {
-                  cutsByCol.set(col, { col, type: 'drill' as const });
-                }
-              });
-              
-              const allCuts = Array.from(cutsByCol.values());
-              
-              return allCuts.map((cut: any) => {
+              return allCuts.map((cut) => {
                 // Convert local column to world column for cut ID
                 const worldCol = cut.col + pcbPosition.col;
                 const cutId = `cut-${worldRow}-${worldCol}`;
@@ -1831,6 +1889,7 @@ export const StripboardCanvas = () => {
                 opacity={img.opacity}
                 isSelected={selectedItems.includes(img.id)}
                 onTransformEnd={(nx, ny, scaleMul) => {
+                  saveToHistory();
                   updateReferenceImageById(img.id, {
                     x: nx,
                     y: ny,
@@ -1853,6 +1912,7 @@ export const StripboardCanvas = () => {
               opacity={referenceImage.opacity || 1.0}
               isSelected={selectedItems.includes(REF_IMAGE_ID)}
               onTransformEnd={(nx, ny, scaleMul) => {
+                saveToHistory();
                 updateReferenceImage({
                   x: nx,
                   y: ny,
@@ -2001,6 +2061,7 @@ export const StripboardCanvas = () => {
                 opacity={img.opacity}
                 isSelected={selectedItems.includes(img.id)}
                 onTransformEnd={(nx, ny, scaleMul) => {
+                  saveToHistory();
                   updateReferenceImageById(img.id, {
                     x: nx,
                     y: ny,
@@ -2023,6 +2084,7 @@ export const StripboardCanvas = () => {
               opacity={referenceImage.opacity || 1.0}
               isSelected={selectedItems.includes(REF_IMAGE_ID)}
               onTransformEnd={(nx, ny, scaleMul) => {
+                saveToHistory();
                 updateReferenceImage({
                   x: nx,
                   y: ny,
@@ -2227,6 +2289,7 @@ export const StripboardCanvas = () => {
           onClose={() => setImageContextMenu(null)}
           onCropImage={handleCropImage}
           onDeleteImage={handleDeleteImage}
+          canCrop={imageContextMenu.imageId !== REF_IMAGE_ID}
         />
       )}
 

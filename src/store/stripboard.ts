@@ -19,6 +19,7 @@ import type {
   RatsnestColorMode,
   ReferenceImageState,
   PCB,
+  Cut,
   NetlistImportOptions,
 } from '@/lib/types';
 import { getRotatedPinPositions, unrotatePositions } from '@/lib/rotation';
@@ -29,26 +30,30 @@ import {
 } from '@/lib/netlist-parser';
 import { createGenericDefinition, createDefinitionFromPlacements } from '@/lib/component-utils';
 import { clusterComponentsByConnectivity } from '@/lib/component-clustering';
+import { NET_COLORS } from '@/lib/net-colors';
 
 /**
  * Determine the default rotation for a component.
  * All components should be placed perpendicular to strips (90°) to avoid shorting.
  */
-function getDefaultRotation(_definition: ComponentDefinition): 0 | 90 | 180 | 270 {
+function getDefaultRotation(): 0 | 90 | 180 | 270 {
   // All components should be perpendicular to strips (which run horizontally)
   return 90;
 }
 
-const NET_COLORS = [
-  '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e',
-  '#14b8a6', '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6',
-  '#a855f7', '#d946ef', '#ec4899', '#f43f5e',
-];
-
 const MAX_HISTORY = 50;
 
+/** Initial canvas offset: clears the floating toolbar so column 0 stays visible */
+const DEFAULT_PAN = { x: 100, y: 60 };
+
 /** Generate one full-width copper strip per row (real stripboard has continuous strips) */
-function generateStrips(rows: number, cols: number, existingBreaks?: Map<number, number[]>, pcbId?: string): Strip[] {
+function generateStrips(
+  rows: number,
+  cols: number,
+  existingBreaks?: Map<number, number[]>,
+  pcbId?: string,
+  existingCuts?: Map<number, Cut[]>
+): Strip[] {
   const strips: Strip[] = [];
   for (let row = 0; row < rows; row++) {
     strips.push({
@@ -57,10 +62,25 @@ function generateStrips(rows: number, cols: number, existingBreaks?: Map<number,
       startCol: 0,
       endCol: cols - 1,
       breaks: existingBreaks?.get(row) ?? [],
+      ...(existingCuts?.has(row) ? { cuts: existingCuts.get(row) } : {}),
       pcbId,
     });
   }
   return strips;
+}
+
+/** Collect the breaks and cuts of one PCB's strips that still fit a new width */
+function collectStripCuts(strips: Strip[], pcbId: string | undefined, newCols: number) {
+  const breaks = new Map<number, number[]>();
+  const cuts = new Map<number, Cut[]>();
+  for (const strip of strips) {
+    if (strip.pcbId !== pcbId) continue;
+    const validBreaks = strip.breaks.filter((b) => b < newCols);
+    if (validBreaks.length > 0) breaks.set(strip.row, validBreaks);
+    const validCuts = (strip.cuts ?? []).filter((c) => Math.floor(c.col) < newCols);
+    if (strip.cuts) cuts.set(strip.row, validCuts);
+  }
+  return { breaks, cuts };
 }
 
 const DEFAULT_LAYER_VISIBILITY: LayerVisibility = {
@@ -81,6 +101,15 @@ const getSnapshot = (state: StripboardState): HistoryEntry => ({
   strips: JSON.parse(JSON.stringify(state.strips)),
   wires: JSON.parse(JSON.stringify(state.wires)),
   nets: JSON.parse(JSON.stringify(state.nets)),
+  rows: state.rows,
+  cols: state.cols,
+  pcbs: JSON.parse(JSON.stringify(state.pcbs)),
+  netGroups: JSON.parse(JSON.stringify(state.netGroups)),
+  // Images are replaced, never mutated, by the store actions, so share them
+  referenceImages: [...state.referenceImages],
+  // Definitions are immutable objects, so a shallow copy is enough
+  componentDefinitions: [...state.componentDefinitions],
+  // stripColor is a display preference, not an edit, so undo leaves it alone
 });
 
 interface StripboardStore extends StripboardState {
@@ -262,7 +291,7 @@ const initialState: StripboardState = {
   ratsnestColorMode: 'colored', // Default to colored ratsnest lines
   componentOpacity: 1.0, // Default to fully opaque components
   zoom: 1,
-  pan: { x: 60, y: 60 },
+  pan: { ...DEFAULT_PAN },
   performanceMode: 'auto', // Auto-detect and adapt to device performance
   realtimeRatsnest: true, // Enable real-time ratsnest updates
   importReport: null,
@@ -366,11 +395,18 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
     let newPosRow = Math.round(centerRow - newRelCenterRow);
     let newPosCol = Math.round(centerCol - newRelCenterCol);
 
-    // Clamp so all pins stay on the board
-    const maxPinRow = Math.max(...rotatedPins.map((p) => p.row));
-    const maxPinCol = Math.max(...rotatedPins.map((p) => p.col));
-    newPosRow = Math.max(0, Math.min(state.rows - 1 - maxPinRow, newPosRow));
-    newPosCol = Math.max(0, Math.min(state.cols - 1 - maxPinCol, newPosCol));
+    // Clamp so all pins stay on the PCB the part is on (no clamp if it is on none)
+    const hostPcb = state.pcbs.find(
+      (p) =>
+        centerRow >= p.position.row && centerRow <= p.position.row + p.rows - 1 &&
+        centerCol >= p.position.col && centerCol <= p.position.col + p.cols - 1
+    );
+    if (hostPcb) {
+      const maxPinRow = Math.max(...rotatedPins.map((p) => p.row));
+      const maxPinCol = Math.max(...rotatedPins.map((p) => p.col));
+      newPosRow = Math.max(hostPcb.position.row, Math.min(hostPcb.position.row + hostPcb.rows - 1 - maxPinRow, newPosRow));
+      newPosCol = Math.max(hostPcb.position.col, Math.min(hostPcb.position.col + hostPcb.cols - 1 - maxPinCol, newPosCol));
+    }
 
     const newPins: ComponentPin[] = component.pins.map((pin, i) => ({
       ...pin,
@@ -459,7 +495,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
     const newDef = createDefinitionFromPlacements(def.footprint.type, placements);
 
     // Preserve base type in ID for subtype detection
-    const baseType = def.id.split('-')[0];
+    const baseType = def.id.replace(/-custom-.*$/, '');
     const enhancedDef = {
       ...newDef,
       id: `${baseType}-custom-${newDef.id}`,
@@ -695,6 +731,12 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       wires: state.wires.map((w) =>
         w.netId === id ? { ...w, netId: '' } : w
       ),
+      netGroups: state.netGroups.map((g) => ({
+        ...g,
+        netIds: g.netIds.filter((n) => n !== id),
+      })),
+      selectedNetIds: state.selectedNetIds.filter((n) => n !== id),
+      highlightedNetId: state.highlightedNetId === id ? null : state.highlightedNetId,
     })),
 
   updateNet: (id, updates) =>
@@ -909,158 +951,141 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
         strips,
         // Clear reference image if it was selected for deletion
         referenceImage: clearRefImage ? null : s.referenceImage,
+        referenceImages: s.referenceImages.filter((img) => !s.selectedItems.includes(img.id)),
         selectedItems: [],
       };
     });
   },
 
   // ─── Bulk Movement ──────────────────────────────────────────
-  moveSelectedItems: (deltaRow, deltaCol) =>
+  moveSelectedItems: (reqRow, reqCol) =>
     set((state) => {
       // Reset paste count when items are moved
       pasteCount = 0;
-      
-      // Parse selected cuts → { oldRow, oldCol, newRow, newCol, type }
-      // Support fractional columns for slice cuts (e.g., cut-5-7.5)
-      const CUT_RE = /^cut-(\d+)-(\d+(?:\.\d+)?)$/;
-      const cutMoves = state.selectedItems
-        .map((id) => {
-          const match = id.match(CUT_RE);
-          if (!match) return null;
-          
-          const oldRow = +match[1];
-          const oldCol = +match[2];
-          
-          // Find the cut type from the strip
-          let cutType: 'drill' | 'slice' = 'drill';
-          for (const pcb of state.pcbs) {
-            const localRow = oldRow - pcb.position.row;
-            const localCol = oldCol - pcb.position.col;
-            const intCol = Math.floor(oldCol);
-            
-            if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
-              const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
-              const strip = state.strips.find(s => s.id === stripId);
-              if (strip) {
-                const cut = strip.cuts?.find(c => c.col === localCol);
-                if (cut) {
-                  cutType = cut.type;
-                }
-              }
-              break;
-            }
-          }
-          
-          return {
-            oldRow,
-            oldCol,
-            newRow: oldRow + deltaRow,
-            newCol: oldCol + deltaCol,
-            type: cutType,
-          };
-        })
-        .filter((m): m is { oldRow: number; oldCol: number; newRow: number; newCol: number; type: 'drill' | 'slice' } => m !== null);
 
-      // Move cuts: remove from old positions, add to new positions using PCB-aware logic
+      const CUT_RE = /^cut-(\d+)-(\d+(?:\.\d+)?)$/;
+      const sel = new Set(state.selectedItems);
+      const pcbAt = (row: number, col: number) =>
+        state.pcbs.find(
+          (p) =>
+            row >= p.position.row && row < p.position.row + p.rows &&
+            Math.floor(col) >= p.position.col && Math.floor(col) < p.position.col + p.cols
+        );
+
+      // Clamp the delta so every selected point stays on the PCB it is on now
+      let loR = -Infinity, hiR = Infinity, loC = -Infinity, hiC = Infinity;
+      const limit = (row: number, col: number) => {
+        const pcb = pcbAt(row, col);
+        if (!pcb) return;
+        const frac = col % 1 !== 0 ? 0.5 : 0;
+        loR = Math.max(loR, pcb.position.row - row);
+        hiR = Math.min(hiR, pcb.position.row + pcb.rows - 1 - row);
+        loC = Math.max(loC, pcb.position.col - col);
+        hiC = Math.min(hiC, pcb.position.col + pcb.cols - 1 + frac - col);
+      };
+      for (const c of state.components) {
+        if (sel.has(c.id)) for (const p of c.pins) limit(p.position.row, p.position.col);
+      }
+      for (const w of state.wires) {
+        if (sel.has(w.id)) for (const p of w.points) limit(p.row, p.col);
+      }
+      for (const id of state.selectedItems) {
+        const m = id.match(CUT_RE);
+        if (m) limit(+m[1], +m[2]);
+      }
+      if (loR > hiR || loC > hiC) return {};
+      const deltaRow = Math.min(Math.max(reqRow, loR), hiR);
+      const deltaCol = Math.min(Math.max(reqCol, loC), hiC);
+      if (deltaRow === 0 && deltaCol === 0) return {};
+
+      // Selected cuts that exist on the board
+      type CutMove = { oldRow: number; oldCol: number; type: 'drill' | 'slice' };
+      const stripFor = (row: number, col: number) => {
+        const pcb = pcbAt(row, col);
+        if (!pcb) return null;
+        const localRow = row - pcb.position.row;
+        const id = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
+        return { id, localCol: col - pcb.position.col };
+      };
+      const cutMoves: CutMove[] = [];
+      const staleIds = new Set<string>();
+      for (const id of state.selectedItems) {
+        const m = id.match(CUT_RE);
+        if (!m) continue;
+        const oldRow = +m[1];
+        const oldCol = +m[2];
+        const at = stripFor(oldRow, oldCol);
+        const cut = at && state.strips.find((s) => s.id === at.id)?.cuts?.find((c) => c.col === at.localCol);
+        if (cut) cutMoves.push({ oldRow, oldCol, type: cut.type });
+        else staleIds.add(id);
+      }
+
       let newStrips = state.strips;
       if (cutMoves.length > 0) {
-        // First remove all old cuts using world coordinates
-        for (const move of cutMoves) {
-          for (const pcb of state.pcbs) {
-            const localRow = move.oldRow - pcb.position.row;
-            const localCol = move.oldCol - pcb.position.col;
-            const intCol = Math.floor(move.oldCol);
-            
-            if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
-              const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
-              newStrips = newStrips.map((strip) => {
-                if (strip.id === stripId) {
-                  // Remove from both cuts and breaks arrays (using local coordinates)
-                  const newCuts = (strip.cuts || []).filter(c => c.col !== localCol);
-                  const newBreaks = (strip.breaks || []).filter(b => b !== localCol);
-                  return { ...strip, cuts: newCuts, breaks: newBreaks };
+        // Remove all old cuts first, then add at the new positions
+        for (const mv of cutMoves) {
+          const at = stripFor(mv.oldRow, mv.oldCol)!;
+          newStrips = newStrips.map((s) =>
+            s.id === at.id
+              ? {
+                  ...s,
+                  cuts: (s.cuts || []).filter((c) => c.col !== at.localCol),
+                  breaks: (s.breaks || []).filter((b) => b !== at.localCol),
                 }
-                return strip;
-              });
-              break;
-            }
-          }
+              : s
+          );
         }
-        
-        // Then add all new cuts using world coordinates
-        for (const move of cutMoves) {
-          for (const pcb of state.pcbs) {
-            const localRow = move.newRow - pcb.position.row;
-            const localCol = move.newCol - pcb.position.col;
-            const intCol = Math.floor(move.newCol);
-            
-            if (localRow >= 0 && localRow < pcb.rows && intCol >= pcb.position.col && intCol < pcb.position.col + pcb.cols) {
-              const stripId = pcb.isMain ? `strip-row-${localRow}` : `${pcb.id}-strip-row-${localRow}`;
-              newStrips = newStrips.map((strip) => {
-                if (strip.id === stripId) {
-                  // Check if position is within strip bounds
-                  const intLocalCol = Math.floor(localCol);
-                  const isInBounds = move.type === 'drill' 
-                    ? intLocalCol >= strip.startCol && intLocalCol <= strip.endCol
-                    : intLocalCol >= strip.startCol - 0.5 && intLocalCol <= strip.endCol + 0.5;
-                  
-                  if (isInBounds) {
-                    const cuts = strip.cuts || [];
-                    // Only add if not already present (using local coordinates)
-                    if (!cuts.some(c => c.col === localCol)) {
-                      return { 
-                        ...strip, 
-                        cuts: [...cuts, { col: localCol, type: move.type }].sort((a, b) => a.col - b.col) 
-                      };
-                    }
-                  }
-                }
-                return strip;
-              });
-              break;
+        for (const mv of cutMoves) {
+          const newRow = mv.oldRow + deltaRow;
+          const newCol = mv.oldCol + deltaCol;
+          const at = stripFor(newRow, newCol);
+          if (!at) continue;
+          newStrips = newStrips.map((s) => {
+            if (s.id !== at.id) return s;
+            const intLocal = Math.floor(at.localCol);
+            const inBounds = mv.type === 'drill'
+              ? intLocal >= s.startCol && intLocal <= s.endCol
+              : intLocal >= s.startCol - 0.5 && intLocal <= s.endCol + 0.5;
+            const cuts = s.cuts || [];
+            if (!inBounds || cuts.some((c) => c.col === at.localCol)) return s;
+            let breaks = s.breaks || [];
+            // Drill cuts are mirrored into the legacy breaks list, like addCut
+            if (mv.type === 'drill' && Number.isInteger(at.localCol) && !breaks.includes(at.localCol)) {
+              breaks = [...breaks, at.localCol].sort((a, b) => a - b);
             }
-          }
+            return {
+              ...s,
+              cuts: [...cuts, { col: at.localCol, type: mv.type }].sort((a, b) => a.col - b.col),
+              breaks,
+            };
+          });
         }
       }
 
-      // Update selectedItems so cut IDs reflect their new positions
-      const newSelectedItems =
-        cutMoves.length > 0
-          ? state.selectedItems.map((id) => {
-              const m = id.match(CUT_RE);
-              if (m) return `cut-${+m[1] + deltaRow}-${+m[2] + deltaCol}`;
-              return id;
-            })
-          : state.selectedItems;
+      // Selection follows the cuts to their new positions; stale ids are dropped
+      const newSelectedItems = state.selectedItems
+        .filter((id) => !staleIds.has(id))
+        .map((id) => {
+          const m = id.match(CUT_RE);
+          return m ? `cut-${+m[1] + deltaRow}-${+m[2] + deltaCol}` : id;
+        });
 
       return {
         components: state.components.map((c) =>
-          state.selectedItems.includes(c.id)
+          sel.has(c.id)
             ? {
                 ...c,
-                position: {
-                  row: c.position.row + deltaRow,
-                  col: c.position.col + deltaCol,
-                },
+                position: { row: c.position.row + deltaRow, col: c.position.col + deltaCol },
                 pins: c.pins.map((pin) => ({
                   ...pin,
-                  position: {
-                    row: pin.position.row + deltaRow,
-                    col: pin.position.col + deltaCol,
-                  },
+                  position: { row: pin.position.row + deltaRow, col: pin.position.col + deltaCol },
                 })),
               }
             : c
         ),
         wires: state.wires.map((w) =>
-          state.selectedItems.includes(w.id)
-            ? {
-                ...w,
-                points: w.points.map((p) => ({
-                  row: p.row + deltaRow,
-                  col: p.col + deltaCol,
-                })),
-              }
+          sel.has(w.id)
+            ? { ...w, points: w.points.map((p) => ({ row: p.row + deltaRow, col: p.col + deltaCol })) }
             : w
         ),
         strips: newStrips,
@@ -1147,18 +1172,12 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
   // ─── Library ──────────────────────────────────────────────
   loadComponentDefinitions: (definitions) =>
     set((state) => {
-      // Merge: keep existing generic/custom definitions not in the library
-      const existingGenerics = state.componentDefinitions.filter(
-        (d) => d.id.startsWith('generic-') || d.id.startsWith('custom-')
-      );
-      
-      // Build a map of library definition IDs for quick lookup
+      // Merge: the library replaces its own entries; every other existing
+      // definition (generic, pin-drag variants, imported footprints) is kept
       const libraryIds = new Set(definitions.map((d) => d.id));
-      
-      // Keep only generics that don't conflict with library definitions
-      const keptGenerics = existingGenerics.filter((g) => !libraryIds.has(g.id));
-      
-      return { componentDefinitions: [...definitions, ...keptGenerics] };
+      const kept = state.componentDefinitions.filter((d) => !libraryIds.has(d.id));
+
+      return { componentDefinitions: [...definitions, ...kept] };
     }),
 
   addComponentDefinition: (definition) =>
@@ -1174,14 +1193,9 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
   // ─── Board ────────────────────────────────────────────────
   setBoardSize: (rows, cols) => {
     const state = get();
-    // Preserve existing breaks when resizing (only for main PCB)
-    const existingBreaks = new Map<number, number[]>();
-    for (const strip of state.strips) {
-      if (!strip.pcbId) { // Only resize main PCB strips
-        const validBreaks = strip.breaks.filter((b) => b < cols);
-        if (validBreaks.length > 0) existingBreaks.set(strip.row, validBreaks);
-      }
-    }
+    state.saveToHistory();
+    // Preserve existing breaks and cuts when resizing (only for main PCB)
+    const { breaks: existingBreaks, cuts: existingCuts } = collectStripCuts(state.strips, undefined, cols);
     
     // Update main PCB
     const mainPcb = state.pcbs.find(p => p.isMain);
@@ -1192,7 +1206,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       cols,
       pcbs: state.pcbs.map(p => p.isMain && newMainPcb ? newMainPcb : p),
       strips: [
-        ...generateStrips(rows, cols, existingBreaks, undefined), // Main PCB strips
+        ...generateStrips(rows, cols, existingBreaks, undefined, existingCuts), // Main PCB strips
         ...state.strips.filter(s => s.pcbId) // Keep other PCB strips
       ],
     });
@@ -1201,6 +1215,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
   // ─── PCBs ─────────────────────────────────────────────────
   addPCB: (name, rows, cols) => {
     const state = get();
+    state.saveToHistory();
     const pcbId = `pcb-${Date.now()}`;
     
     // Calculate position: place next to the rightmost PCB with padding
@@ -1237,6 +1252,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
     // Cannot delete main PCB
     if (!pcb || pcb.isMain) return;
     
+    state.saveToHistory();
     set({
       pcbs: state.pcbs.filter(p => p.id !== id),
       strips: state.strips.filter(s => s.pcbId !== id),
@@ -1253,20 +1269,15 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       const newRows = updates.rows ?? pcb.rows;
       const newCols = updates.cols ?? pcb.cols;
       
-      // Preserve existing breaks when resizing
-      const existingBreaks = new Map<number, number[]>();
-      for (const strip of state.strips) {
-        if (strip.pcbId === id) {
-          const validBreaks = strip.breaks.filter((b) => b < newCols);
-          if (validBreaks.length > 0) existingBreaks.set(strip.row, validBreaks);
-        }
-      }
+      // Preserve existing breaks and cuts when resizing
+      const { breaks: existingBreaks, cuts: existingCuts } = collectStripCuts(state.strips, id, newCols);
       
+      state.saveToHistory();
       set({
         pcbs: state.pcbs.map(p => p.id === id ? { ...p, ...updates, rows: newRows, cols: newCols } : p),
         strips: [
           ...state.strips.filter(s => s.pcbId !== id), // Remove old strips for this PCB
-          ...generateStrips(newRows, newCols, existingBreaks, id), // Add new strips
+          ...generateStrips(newRows, newCols, existingBreaks, id, existingCuts), // Add new strips
         ],
       });
     } else {
@@ -1280,10 +1291,13 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
   // ─── Project ──────────────────────────────────────────────
   exportProject: () => {
     const state = get();
-    // Extract custom component definitions (generic/custom) that should be saved with the project
-    // Include definitions that start with 'generic-' or 'custom-', OR contain '-custom-' (variants created in edit dialog)
+    // Save every definition a component uses (covers Vero-imported footprints), plus
+    // generic/custom definitions ('generic-', 'custom-' or '-custom-' variants from the edit dialog)
+    const usedIds = new Set(state.components.map((c) => c.definitionId));
     const customDefinitions = state.componentDefinitions.filter(
-      (d) => d.id.startsWith('generic-') || d.id.startsWith('custom-') || d.id.includes('-custom-')
+      (d) =>
+        usedIds.has(d.id) ||
+        d.id.startsWith('generic-') || d.id.startsWith('custom-') || d.id.includes('-custom-')
     );
     return {
       version: '1.0',
@@ -1293,6 +1307,8 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       strips: state.strips,
       wires: state.wires,
       nets: state.nets,
+      netGroups: state.netGroups,
+      referenceImages: state.referenceImages,
       stripColor: state.stripColor,
       customDefinitions: customDefinitions.length > 0 ? customDefinitions : undefined,
       importReport: state.importReport ?? undefined,
@@ -1359,10 +1375,16 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       strips,
       wires: data.wires ?? [],
       nets: data.nets ?? [],
+      netGroups: data.netGroups ?? [],
+      referenceImages: data.referenceImages ?? [],
+      referenceImage: null,
       stripColor: data.stripColor ?? '#4a4a4a', // Default to dark grey if not specified
       componentDefinitions: mergedDefinitions,
       selectedItems: [],
+      selectedNetIds: [],
+      highlightedNetId: null,
       importReport: data.importReport ?? null, // Restore saved import report
+      pan: { ...DEFAULT_PAN }, // Show the opened board from its top-left corner
       past: [],
       future: [],
     });
@@ -1478,7 +1500,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       }
 
       // Determine appropriate rotation for this component
-      const rotation = getDefaultRotation(def);
+      const rotation = getDefaultRotation();
       
       // Get rotated pin positions for layout calculation
       const rotatedPinPositions = getRotatedPinPositions(def.pins, rotation);
@@ -1520,6 +1542,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
         id: `comp-${Date.now()}-${pc.ref}`,
         reference: pc.ref,
         value: pc.value || undefined,
+        footprint: pc.footprint || undefined,
         definitionId: defId,
         position: pos,
         rotation,
@@ -1610,16 +1633,41 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       existingNetsById.set(net.id, net);
     }
 
+    // Map each netlist net to an id by name, because KiCad net codes change between exports.
+    // Existing nets with the same name keep their id; new names get a fresh, unused id.
+    const netIdByCode = new Map<string, string>();
+    const usedNetIds = new Set<string>();
+    const claimedNames = new Set<string>();
+    const importedNetsList = parsed.nets.filter((n) => n.nodes.length > 0);
+    for (const n of importedNetsList) {
+      const name = n.name || `Net${n.code}`;
+      if (claimedNames.has(name)) continue;
+      const match = state.nets.find((e) => e.name === name && !usedNetIds.has(e.id));
+      if (match) {
+        claimedNames.add(name);
+        usedNetIds.add(match.id);
+        netIdByCode.set(n.code, match.id);
+      }
+    }
+    for (const n of importedNetsList) {
+      if (netIdByCode.has(n.code)) continue;
+      let netId = `net-${n.code}`;
+      for (let k = 2; usedNetIds.has(netId) || existingNetsById.has(netId); k++) {
+        netId = `net-${n.code}-${k}`;
+      }
+      usedNetIds.add(netId);
+      netIdByCode.set(n.code, netId);
+    }
+
     // Track stats
     const skippedComponents: SkippedComponent[] = [];
     const virtualComponents: { ref: string; value: string }[] = [];
     let addedCount = 0;
 
     // Build the new nets list from the parsed netlist
-    const newNets: Net[] = parsed.nets
-      .filter((n) => n.nodes.length > 0)
+    const newNets: Net[] = importedNetsList
       .map((n, i) => {
-        const netId = `net-${n.code}`;
+        const netId = netIdByCode.get(n.code)!;
         // Preserve existing net color if available
         const existing = existingNetsById.get(netId);
         return {
@@ -1671,6 +1719,10 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
 
       // Update footprint (definition)
       if (options.updateFootprints) {
+        if (pc.footprint && pc.footprint !== existing.footprint) {
+          updates.footprint = pc.footprint;
+          changed = true;
+        }
         let defId = mapFootprintToDefinition(pc.footprint, pc.ref, pc.value);
         let def = defId ? defs.find((d) => d.id === defId) : null;
         const pinSet = pinsByRef.get(pc.ref);
@@ -1698,7 +1750,14 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
           def = defs.find((d) => d.id === genericDef.id)!;
         }
 
-        if (defId !== existing.definitionId) {
+        // A derived variant (user-adjusted or Vero-imported) of a compatible footprint keeps its definition
+        const existingDef = defs.find((d) => d.id === existing.definitionId);
+        const keepsExisting = !!existingDef && !!def && defId !== existing.definitionId &&
+          existingDef.footprint.type === def.footprint.type &&
+          existingDef.pins.length === def.pins.length &&
+          def.pins.every((dp) => existingDef.pins.some((ep) => ep.number === dp.number));
+
+        if (defId !== existing.definitionId && !keepsExisting) {
           updates.definitionId = defId;
           // Re-derive pins for the new definition, keeping the same position & rotation
           const rotatedPinPositions = getRotatedPinPositions(def!.pins, existing.rotation);
@@ -1709,7 +1768,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
             const rotatedPos = rotatedPinPositions[idx];
             return {
               number: pDef.number,
-              netId: netEntry ? `net-${netEntry.code}` : undefined,
+              netId: netEntry ? netIdByCode.get(netEntry.code) : undefined,
               position: {
                 row: existing.position.row + rotatedPos.row,
                 col: existing.position.col + rotatedPos.col,
@@ -1729,7 +1788,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
             const netEntry = parsed.nets.find((n) =>
               n.nodes.some((node) => node.ref === pc.ref && node.pin === pin.number)
             );
-            const newNetId = netEntry ? `net-${netEntry.code}` : undefined;
+            const newNetId = netEntry ? netIdByCode.get(netEntry.code) : undefined;
             if (newNetId !== pin.netId) {
               changed = true;
               return { ...pin, netId: newNetId };
@@ -1794,7 +1853,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
           def = defs.find((d) => d.id === genericDef.id)!;
         }
 
-        const rotation = getDefaultRotation(def);
+        const rotation = getDefaultRotation();
         const rotatedPinPositions = getRotatedPinPositions(def.pins, rotation);
         const rotatedWidth = Math.max(...rotatedPinPositions.map((p) => p.col)) + 1;
         const rotatedHeight = Math.max(...rotatedPinPositions.map((p) => p.row)) + 1;
@@ -1813,7 +1872,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
           const rotatedPos = rotatedPinPositions[idx];
           return {
             number: pDef.number,
-            netId: netEntry ? `net-${netEntry.code}` : undefined,
+            netId: netEntry ? netIdByCode.get(netEntry.code) : undefined,
             position: { row: pos.row + rotatedPos.row, col: pos.col + rotatedPos.col },
             extended: 0,
           };
@@ -1823,6 +1882,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
           id: `comp-${Date.now()}-${pc.ref}`,
           reference: pc.ref,
           value: pc.value || undefined,
+          footprint: pc.footprint || undefined,
           definitionId: defId,
           position: pos,
           rotation,
@@ -1872,8 +1932,16 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
       nets: finalNets,
       selectedItems: [],
       importReport: report,
-      netGroups: [],
-      selectedNetIds: [],
+      // Net ids are stable by name, so keep groups and drop only ids that no longer exist
+      netGroups: state.netGroups.map((g) => ({
+        ...g,
+        netIds: g.netIds.filter((nid) => finalNets.some((n) => n.id === nid)),
+      })),
+      selectedNetIds: state.selectedNetIds.filter((nid) => finalNets.some((n) => n.id === nid)),
+      highlightedNetId:
+        state.highlightedNetId && finalNets.some((n) => n.id === state.highlightedNetId)
+          ? state.highlightedNetId
+          : null,
       netSearchFilter: '',
     });
 
@@ -1982,7 +2050,7 @@ export const useStripboardStore = create<StripboardStore>((set, get) => ({
 
       // Generate a unique reference
       const prefix = comp.reference.replace(/[0-9]/g, '');
-      const nums = state.components
+      const nums = [...state.components, ...newComponents]
         .filter((c) => c.reference.startsWith(prefix))
         .map((c) => parseInt(c.reference.slice(prefix.length)))
         .filter((n) => !isNaN(n));

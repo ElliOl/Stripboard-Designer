@@ -12,12 +12,20 @@ import {
   Settings,
   Circle,
   Minus,
+  FilePlus,
+  Wand2,
 } from 'lucide-react';
 import { useStripboardStore } from '@/store/stripboard';
+import { clearAllAutosaves } from '@/lib/autosave';
+import libraryData from '@/data/library.json';
+import type { ComponentDefinition } from '@/lib/types';
 import { parseKiCadNetlist, isVirtualRef, type ParsedNetlist } from '@/lib/netlist-parser';
+import { sanitizeProject } from '@/lib/project-validation';
+import { isVeroProject, convertVeroProject } from '@/lib/vero-import';
 import type { ToolType, NetlistImportOptions } from '@/lib/types';
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { NetlistImportDialog } from '@/components/NetlistImportDialog';
+import { AutoLayoutDialog } from '@/components/AutoLayoutDialog';
 
 const tools: Array<{
   type: ToolType;
@@ -42,13 +50,17 @@ export const Toolbar = () => {
     exportProject,
     importProject,
     importNetlistWithOptions,
+    reset,
+    loadComponentDefinitions,
     components,
+    componentDefinitions,
     layerVisibility,
     toggleLayer,
   } = useStripboardStore();
 
   // ─── Settings Dialog State ────────────────────────────────
   const [showSettings, setShowSettings] = useState(false);
+  const [showAutoLayout, setShowAutoLayout] = useState(false);
 
   // ─── Netlist Import Dialog State ──────────────────────────
   const [netlistImportPending, setNetlistImportPending] = useState<{
@@ -118,6 +130,13 @@ export const Toolbar = () => {
     URL.revokeObjectURL(url);
   };
 
+  const confirmReplaceBoard = () => {
+    const { components: cs, wires: ws, strips: ss } = useStripboardStore.getState();
+    const hasCuts = ss.some((s) => (s.breaks?.length ?? 0) > 0 || (s.cuts?.length ?? 0) > 0);
+    if (cs.length === 0 && ws.length === 0 && !hasCuts) return true;
+    return confirm('Open this project? This replaces the current board.');
+  };
+
   const handleImport = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -127,16 +146,53 @@ export const Toolbar = () => {
       if (!file) return;
       const reader = new FileReader();
       reader.onload = (ev) => {
+        let data: unknown;
         try {
-          const data = JSON.parse(ev.target?.result as string);
-          importProject(data);
+          data = JSON.parse(ev.target?.result as string);
         } catch {
           console.error('Failed to import project');
+          return;
+        }
+        // Vero Designer projects are converted to a board on the fly
+        if (isVeroProject(data)) {
+          try {
+            const { project, notes } = convertVeroProject(data, componentDefinitions);
+            if (!confirmReplaceBoard()) return;
+            importProject(project);
+            if (notes.length) {
+              alert(`Imported Vero Designer layout.\n\nOff-board wiring:\n${notes.join('\n')}`);
+            }
+          } catch (err) {
+            alert(err instanceof Error ? err.message : 'Could not import this Vero Designer project.');
+          }
+          return;
+        }
+        const result = sanitizeProject(data);
+        if (!result) {
+          alert('This file is not a valid Stripboard Designer project.');
+          return;
+        }
+        if (!confirmReplaceBoard()) return;
+        importProject(result.project);
+        if (result.dropped > 0 || result.fixed > 0) {
+          const parts = [
+            result.dropped > 0 ? `${result.dropped} damaged item${result.dropped !== 1 ? 's were' : ' was'} skipped` : '',
+            result.fixed > 0 ? `${result.fixed} ${result.fixed !== 1 ? 'were' : 'was'} repaired` : '',
+          ].filter(Boolean);
+          alert(`Opened the project, but ${parts.join(' and ')}.`);
         }
       };
       reader.readAsText(file);
     };
     input.click();
+  };
+
+  const handleNewProject = () => {
+    if (!confirm('Start a new project? Unsaved changes to the current board will be lost.')) return;
+    reset();
+    // reset() clears the component definitions, so load the built-in library again
+    loadComponentDefinitions(libraryData as ComponentDefinition[]);
+    clearAllAutosaves();
   };
 
   const handleImportNetlist = () => {
@@ -146,7 +202,7 @@ export const Toolbar = () => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
       const name = file.name.toLowerCase();
-      if (!name.endsWith('.net') && !name.endsWith('.xml')) {
+      if (!name.endsWith('.net')) {
         if (
           !confirm(
             `"${file.name}" doesn't look like a KiCad netlist (.net) file.\nTry to import it anyway?`
@@ -268,6 +324,12 @@ export const Toolbar = () => {
       {/* ─── Settings ──────────────────────────────────────── */}
       <div className="flex flex-col items-center px-1.5 gap-0.5">
         <ToolBtn
+          icon={Wand2}
+          onClick={() => setShowAutoLayout(true)}
+          title="Auto layout: place parts, links and cuts"
+          size={16}
+        />
+        <ToolBtn
           icon={Settings}
           onClick={() => setShowSettings(true)}
           title="Settings"
@@ -280,6 +342,12 @@ export const Toolbar = () => {
       {/* ─── File Operations ──────────────────────────────── */}
       <div className="flex flex-col items-center px-1.5 gap-0.5 pb-2.5">
         <ToolBtn
+          icon={FilePlus}
+          onClick={handleNewProject}
+          title="New project"
+          size={15}
+        />
+        <ToolBtn
           icon={FileUp}
           onClick={handleImportNetlist}
           title="Import KiCad Netlist (.net)"
@@ -288,7 +356,7 @@ export const Toolbar = () => {
         <ToolBtn
           icon={Upload}
           onClick={handleImport}
-          title="Import Project (.json)"
+          title="Open Project (.json, Stripboard Designer or Vero Designer)"
           size={15}
         />
         <ToolBtn
@@ -303,6 +371,8 @@ export const Toolbar = () => {
       {showSettings && (
         <SettingsDialog onClose={() => setShowSettings(false)} />
       )}
+
+      {showAutoLayout && <AutoLayoutDialog onClose={() => setShowAutoLayout(false)} />}
 
       {/* ─── Netlist Import Dialog ───────────────────────────── */}
       {netlistImportPending && (

@@ -70,6 +70,7 @@ export type Component = {
   id: string;
   reference: string; // R1, U1, C1, etc.
   value?: string; // Component value (e.g. "10k", "56pF", "NE555")
+  footprint?: string; // KiCad footprint name from the netlist, when imported
   definitionId: string; // Reference to ComponentDefinition
   position: GridPosition;
   rotation: 0 | 90 | 180 | 270;
@@ -178,6 +179,12 @@ export type HistoryEntry = {
   strips: Strip[];
   wires: Wire[];
   nets: Net[];
+  rows: number;
+  cols: number;
+  pcbs: PCB[];
+  netGroups: NetGroup[];
+  referenceImages: ReferenceImageState[];
+  componentDefinitions: ComponentDefinition[];
 };
 
 export type ProjectData = {
@@ -191,6 +198,8 @@ export type ProjectData = {
   strips: Strip[];
   wires: Wire[];
   nets: Net[];
+  netGroups?: NetGroup[]; // Optional for backward compatibility
+  referenceImages?: ReferenceImageState[]; // Optional for backward compatibility
   stripColor?: string; // Optional for backward compatibility
   customDefinitions?: ComponentDefinition[]; // Custom component definitions (generic/custom)
   importReport?: ImportReport | null; // Preserved import summary from last netlist import
